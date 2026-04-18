@@ -68,6 +68,7 @@ flutter:
     - assets/images/patterns/
     - assets/images/stickers/
     - assets/images/glitter/
+    - assets/images/tools/
     
 
   # An image asset can refer to one or more resolution-specific "variants", see

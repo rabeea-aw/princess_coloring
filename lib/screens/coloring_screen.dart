@@ -8,12 +8,14 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/coloring_item.dart';
 import '../painters/drawing_painter.dart';
 import '../painters/fill_particles_painter.dart';
+import '../services/ads_manager.dart';
 
 class DrawPoint {
   final Offset offset;
@@ -72,7 +74,8 @@ class _ColoringScreenState extends State<ColoringScreen>
   final Map<int, GlobalKey> _colorKeys = {};
 
   static const double _paletteBarHeight = 74;
-  static const double _toolsBarHeight = 92;
+  static const double _toolsBarHeight = 100;
+  static const double _bannerReservedHeight = 75;
 
   img.Image? _outlineImage;
   img.Image? _fillLayer;
@@ -91,6 +94,9 @@ class _ColoringScreenState extends State<ColoringScreen>
   late final AnimationController _particlesController;
   final List<FillParticle> _particles = [];
   final math.Random _random = math.Random();
+
+  BannerAd? _bannerAd;
+  bool _isBannerReady = false;
 
   final List<Color> colorsList = [
     const Color(0xFFFF3D00),
@@ -149,11 +155,36 @@ class _ColoringScreenState extends State<ColoringScreen>
         });
       });
 
+    _loadBannerAd();
     _loadImageForFill();
+  }
+
+  void _loadBannerAd() {
+    _bannerAd = BannerAd(
+      size: AdSize.banner,
+      adUnitId: AdsManager.bannerId,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          if (!mounted) return;
+          setState(() {
+            _isBannerReady = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          _bannerAd = null;
+          _isBannerReady = false;
+        },
+      ),
+    );
+
+    _bannerAd!.load();
   }
 
   @override
   void dispose() {
+    _bannerAd?.dispose();
     _particlesController.dispose();
     super.dispose();
   }
@@ -556,8 +587,6 @@ class _ColoringScreenState extends State<ColoringScreen>
         ),
       );
     });
-
-    _saveAfterFrame();
   }
 
   void _handleFillTap(TapDownDetails details, Size canvasSize) {
@@ -670,16 +699,14 @@ class _ColoringScreenState extends State<ColoringScreen>
     setState(() {
       _updateFillLayerBytes();
     });
-
-    await _saveAfterFrame();
   }
 
   Widget _buildTopRoundButton({
     required IconData icon,
     required VoidCallback onTap,
     required List<Color> colors,
-    double size = 66,
-    double iconSize = 30,
+    double size = 44,
+    double iconSize = 22,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -711,59 +738,64 @@ class _ColoringScreenState extends State<ColoringScreen>
   }
 
   Widget _buildToolButton({
-    required IconData icon,
-    required String label,
+    required String imagePath,
     required VoidCallback onTap,
     required bool selected,
-    double size = 64,
+    double size = 72,
+    double imageSize = 56,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+      child: Container(
         width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: selected
-                ? [const Color(0xFFFFF1A8), const Color(0xFFFFC94A)]
-                : [const Color(0xFFD9A4FF), const Color(0xFFA855F7)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(
-            color: selected ? Colors.white : const Color(0xFF7A35C7),
-            width: 3,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: selected ? Colors.white24 : Colors.black12,
-              blurRadius: 7,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: selected ? const Color(0xFF8A4200) : Colors.white,
-              size: 28,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                color: selected ? const Color(0xFF8A4200) : Colors.white,
+        height: 84,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        child: Center(
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            scale: selected ? 1.18 : 1.0,
+            child: SizedBox(
+              width: imageSize,
+              height: imageSize,
+              child: Image.asset(
+                imagePath,
+                fit: BoxFit.contain,
               ),
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _tool(String path, PaintMode mode) {
+    return _buildToolButton(
+      imagePath: path,
+      selected: currentMode == mode,
+      onTap: () {
+        setState(() {
+          currentMode = mode;
+          if (mode == PaintMode.brush) {
+            final idx = colorsList.indexOf(selectedColor);
+            activeColorIndex = idx >= 0 ? idx : 0;
+          } else {
+            activeColorIndex = null;
+          }
+        });
+      },
+    );
+  }
+
+  Widget _saveButton() {
+    return _buildToolButton(
+      imagePath: 'assets/images/tools/save.png',
+      selected: false,
+      onTap: () async {
+        await _saveAfterFrame();
+        if (!mounted) return;
+        Navigator.pop(context);
+      },
     );
   }
 
@@ -956,7 +988,7 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildColorBar() {
     return Container(
       height: _paletteBarHeight,
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
         color: const Color(0xFF7B2FD9).withOpacity(0.88),
@@ -1035,8 +1067,8 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildToolsBar() {
     return Container(
       height: _toolsBarHeight,
-      margin: const EdgeInsets.fromLTRB(14, 2, 14, 16),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      margin: const EdgeInsets.fromLTRB(6, 0, 6, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFFB15DFF), Color(0xFF8E39F2)],
@@ -1053,80 +1085,56 @@ class _ColoringScreenState extends State<ColoringScreen>
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildToolButton(
-            icon: Icons.edit_rounded,
-            label: 'فرشاة',
-            selected: currentMode == PaintMode.brush,
-            onTap: () {
-              setState(() {
-                currentMode = PaintMode.brush;
-                final idx = colorsList.indexOf(selectedColor);
-                activeColorIndex = idx >= 0 ? idx : 0;
-              });
-            },
-          ),
-          _buildToolButton(
-            icon: Icons.brush_rounded,
-            label: 'تلوين',
-            selected: currentMode == PaintMode.fill,
-            onTap: () {
-              setState(() {
-                currentMode = PaintMode.fill;
-                activeColorIndex = null;
-              });
-            },
-          ),
-          _buildToolButton(
-            icon: Icons.auto_awesome_rounded,
-            label: 'جليتر',
-            selected: currentMode == PaintMode.glitterFill,
-            onTap: () {
-              setState(() {
-                currentMode = PaintMode.glitterFill;
-                activeColorIndex = null;
-              });
-            },
-          ),
-          _buildToolButton(
-            icon: Icons.image_rounded,
-            label: 'باترن',
-            selected: currentMode == PaintMode.patternFill,
-            onTap: () {
-              setState(() {
-                currentMode = PaintMode.patternFill;
-                activeColorIndex = null;
-              });
-            },
-          ),
-          _buildToolButton(
-            icon: Icons.emoji_emotions_rounded,
-            label: 'ستيكر',
-            selected: currentMode == PaintMode.sticker,
-            onTap: () {
-              setState(() {
-                currentMode = PaintMode.sticker;
-                activeColorIndex = null;
-              });
-            },
-          ),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _tool('assets/images/tools/brush.png', PaintMode.brush),
+            _tool('assets/images/tools/fill.png', PaintMode.fill),
+            _tool('assets/images/tools/glitter.png', PaintMode.glitterFill),
+            _tool('assets/images/tools/pattern.png', PaintMode.patternFill),
+            _tool('assets/images/tools/sticker.png', PaintMode.sticker),
+            _saveButton(),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildBannerSection() {
+    return Container(
+      height: _bannerReservedHeight,
+      width: double.infinity,
+      alignment: Alignment.center,
+      child: (_isBannerReady && _bannerAd != null)
+          ? SizedBox(
+              width: MediaQuery.of(context).size.width,
+              height: _bannerAd!.size.height.toDouble(),
+              child: FittedBox(
+                fit: BoxFit.fill,
+                child: SizedBox(
+                  width: _bannerAd!.size.width.toDouble(),
+                  height: _bannerAd!.size.height.toDouble(),
+                  child: AdWidget(ad: _bannerAd!),
+                ),
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 
   Widget _buildCanvas() {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
         child: LayoutBuilder(
           builder: (context, outerConstraints) {
-            final double buttonsAreaHeight = 86;
-            final double gapBetweenButtonsAndFrame = 10;
+            final double buttonsAreaHeight = 70;
+            final double gapBetweenButtonsAndFrame = 2;
             final double availableHeight =
-                outerConstraints.maxHeight - buttonsAreaHeight - gapBetweenButtonsAndFrame;
+                outerConstraints.maxHeight -
+                    buttonsAreaHeight -
+                    gapBetweenButtonsAndFrame;
 
             if (_loading || _outlineImage == null) {
               return Column(
@@ -1147,7 +1155,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                             },
                             colors: const [
                               Color(0xFFFFB347),
-                              Color(0xFFFF7043),
+                              ui.Color(0xFFFF4C1D),
                             ],
                           ),
                           _buildTopRoundButton(
@@ -1190,10 +1198,10 @@ class _ColoringScreenState extends State<ColoringScreen>
             final imageAspectRatio =
                 _outlineImage!.width / _outlineImage!.height;
 
-            double frameWidth = outerConstraints.maxWidth * 0.9;
-            double frameHeight = frameWidth / imageAspectRatio;
+            double frameWidth = outerConstraints.maxWidth;
+            double frameHeight = availableHeight;
 
-            final maxFrameHeight = availableHeight * 0.98;
+            final maxFrameHeight = availableHeight;
 
             if (frameHeight > maxFrameHeight) {
               frameHeight = maxFrameHeight;
@@ -1217,8 +1225,8 @@ class _ColoringScreenState extends State<ColoringScreen>
                             Navigator.pop(context);
                           },
                           colors: const [
-                            Color(0xFFFFB347),
-                            Color(0xFFFF7043),
+                            Color(0xFFA855F7),
+                            Color(0xFF7E22CE),
                           ],
                         ),
                         _buildTopRoundButton(
@@ -1241,10 +1249,10 @@ class _ColoringScreenState extends State<ColoringScreen>
                       height: frameHeight,
                       decoration: BoxDecoration(
                         color: const Color(0xFFE7E7E7),
-                        borderRadius: BorderRadius.circular(30),
+                        borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: const Color(0xFF59C93B),
-                          width: 6,
+                          width: 8,
                         ),
                         boxShadow: const [
                           BoxShadow(
@@ -1274,9 +1282,9 @@ class _ColoringScreenState extends State<ColoringScreen>
 
                                 final isTapMode =
                                     currentMode == PaintMode.fill ||
-                                        currentMode == PaintMode.glitterFill ||
-                                        currentMode == PaintMode.patternFill ||
-                                        currentMode == PaintMode.sticker;
+                                    currentMode == PaintMode.glitterFill ||
+                                    currentMode == PaintMode.patternFill ||
+                                    currentMode == PaintMode.sticker;
 
                                 return GestureDetector(
                                   behavior: HitTestBehavior.opaque,
@@ -1321,11 +1329,10 @@ class _ColoringScreenState extends State<ColoringScreen>
                                         }
                                       : null,
                                   onPanEnd: currentMode == PaintMode.brush
-                                      ? (_) async {
+                                      ? (_) {
                                           setState(() {
                                             points.add(null);
                                           });
-                                          await _saveAfterFrame();
                                         }
                                       : null,
                                   child: RepaintBoundary(
@@ -1335,6 +1342,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                       children: [
                                         Container(color: Colors.white),
 
+                                        // طبقة التلوين - فقط تزيد فوق الموجود
                                         if (_fillLayerBytes != null)
                                           Positioned.fill(
                                             child: Image.memory(
@@ -1343,6 +1351,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                             ),
                                           ),
 
+                                        // الصورة الأصلية فوق التلوين حتى تضل الخطوط السودا واضحة
                                         Positioned.fill(
                                           child: Image.asset(
                                             widget.item.imagePath,
@@ -1350,6 +1359,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                           ),
                                         ),
 
+                                        // الفرشاة فوق الكل
                                         CustomPaint(
                                           size: canvasSize,
                                           painter: DrawingPainter(
@@ -1357,6 +1367,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                           ),
                                         ),
 
+                                        // الستيكر فوق الكل
                                         ...stickers.map(
                                           (s) => Positioned(
                                             left: s.offset.dx - s.size / 2,
@@ -1413,14 +1424,27 @@ class _ColoringScreenState extends State<ColoringScreen>
         body: SafeArea(
           child: Stack(
             children: [
-              Column(
-                children: [
-                  _buildCanvas(),
-                  _buildColorBar(),
-                  _buildToolsBar(),
-                ],
+              Padding(
+                padding: const EdgeInsets.only(bottom: _bannerReservedHeight),
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        _buildCanvas(),
+                        _buildColorBar(),
+                        _buildToolsBar(),
+                      ],
+                    ),
+                    _buildBrushSizeOverlay(),
+                  ],
+                ),
               ),
-              _buildBrushSizeOverlay(),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildBannerSection(),
+              ),
             ],
           ),
         ),
