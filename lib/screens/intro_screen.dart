@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'gallery_screen.dart';
+import '../main.dart';
 
 class IntroScreen extends StatefulWidget {
   const IntroScreen({super.key});
@@ -12,13 +13,61 @@ class _IntroScreenState extends State<IntroScreen> {
   bool isSoundOn = true;
 
   @override
+  void initState() {
+    super.initState();
+    _initSound();
+  }
+
+  Future<void> _initSound() async {
+    isSoundOn = SoundManager.instance.soundEnabled;
+
+    if (isSoundOn) {
+      await SoundManager.instance.playBackgroundMusic();
+    }
+
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _toggleSound() async {
+    final newValue = !isSoundOn;
+
+    await SoundManager.instance.setSoundEnabled(newValue);
+
+    if (newValue) {
+      await SoundManager.instance.playBackgroundMusic();
+    } else {
+      await SoundManager.instance.stopBackgroundMusic();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      isSoundOn = newValue;
+    });
+  }
+
+  Future<void> _openGallery() async {
+    if (isSoundOn) {
+      await SoundManager.instance.playTapSound();
+    }
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const GalleryScreen(),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
       body: Stack(
         children: [
-          // الخلفية
           Positioned.fill(
             child: Image.asset(
               'assets/images/bg1.png',
@@ -26,7 +75,6 @@ class _IntroScreenState extends State<IntroScreen> {
             ),
           ),
 
-          // العنوان
           Positioned(
             top: 70,
             left: 20,
@@ -40,7 +88,6 @@ class _IntroScreenState extends State<IntroScreen> {
             ),
           ),
 
-          // زر الإعدادات
           Positioned(
             top: 48,
             left: 20,
@@ -50,35 +97,22 @@ class _IntroScreenState extends State<IntroScreen> {
             ),
           ),
 
-          // زر الصوت
           Positioned(
             top: 48,
             right: 20,
             child: _circleButton(
               icon: isSoundOn ? Icons.volume_up : Icons.volume_off,
-              onTap: () {
-                setState(() {
-                  isSoundOn = !isSoundOn;
-                });
-              },
+              onTap: _toggleSound,
             ),
           ),
 
-          // زر ابدأ التلوين
           Positioned(
             top: 300,
             left: 0,
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const GalleryScreen(),
-                    ),
-                  );
-                },
+                onTap: _openGallery,
                 child: Container(
                   width: 250,
                   height: 78,
@@ -119,7 +153,6 @@ class _IntroScreenState extends State<IntroScreen> {
             ),
           ),
 
-          // الأميرة على الشمال
           Positioned(
             bottom: 10,
             left: -20,
@@ -130,7 +163,6 @@ class _IntroScreenState extends State<IntroScreen> {
             ),
           ),
 
-          // اللوح على اليمين
           Positioned(
             bottom: 100,
             right: -18,

@@ -73,9 +73,12 @@ class _ColoringScreenState extends State<ColoringScreen>
   int? activeColorIndex;
   final Map<int, GlobalKey> _colorKeys = {};
 
-  static const double _paletteBarHeight = 74;
-  static const double _toolsBarHeight = 100;
-  static const double _bannerReservedHeight = 75;
+  static const double _paletteBarHeight = 62;
+  static const double _toolsBarHeight = 96;
+  static const double _bannerReservedHeight = 72;
+  static const double _topCanvasSpacing = 12;
+
+  static const double _canvasAspectRatio = 3 / 4;
 
   img.Image? _outlineImage;
   img.Image? _fillLayer;
@@ -705,8 +708,8 @@ class _ColoringScreenState extends State<ColoringScreen>
     required IconData icon,
     required VoidCallback onTap,
     required List<Color> colors,
-    double size = 44,
-    double iconSize = 22,
+    double size = 46,
+    double iconSize = 23,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -746,10 +749,9 @@ class _ColoringScreenState extends State<ColoringScreen>
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         width: size,
         height: 84,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
         child: Center(
           child: AnimatedScale(
             duration: const Duration(milliseconds: 160),
@@ -814,9 +816,9 @@ class _ColoringScreenState extends State<ColoringScreen>
       child: AnimatedContainer(
         key: colorIndex != null ? _colorKeys[colorIndex] : null,
         duration: const Duration(milliseconds: 180),
-        width: 44,
-        height: 44,
-        margin: const EdgeInsets.symmetric(horizontal: 4),
+        width: 38,
+        height: 38,
+        margin: const EdgeInsets.symmetric(horizontal: 3),
         transform:
             isSelected ? (Matrix4.identity()..scale(1.08)) : Matrix4.identity(),
         decoration: BoxDecoration(
@@ -824,12 +826,12 @@ class _ColoringScreenState extends State<ColoringScreen>
           color: color,
           border: Border.all(
             color: isSelected ? Colors.white : Colors.black26,
-            width: isSelected ? 3.5 : 2,
+            width: isSelected ? 3.2 : 1.8,
           ),
           boxShadow: [
             BoxShadow(
               color: isSelected ? color.withOpacity(0.45) : Colors.black12,
-              blurRadius: isSelected ? 10 : 4,
+              blurRadius: isSelected ? 8 : 4,
               offset: const Offset(0, 2),
             ),
           ],
@@ -951,7 +953,7 @@ class _ColoringScreenState extends State<ColoringScreen>
     required bool selected,
     required VoidCallback onTap,
     bool circular = true,
-    double size = 50,
+    double size = 44,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -959,12 +961,12 @@ class _ColoringScreenState extends State<ColoringScreen>
         duration: const Duration(milliseconds: 180),
         width: size,
         height: size,
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        padding: const EdgeInsets.all(4),
+        margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: Colors.white,
           shape: circular ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: circular ? null : BorderRadius.circular(14),
+          borderRadius: circular ? null : BorderRadius.circular(12),
           border: Border.all(
             color: selected ? const Color(0xFFE86ED7) : Colors.black26,
             width: selected ? 3 : 1.4,
@@ -978,7 +980,7 @@ class _ColoringScreenState extends State<ColoringScreen>
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(circular ? 50 : 10),
+          borderRadius: BorderRadius.circular(circular ? 50 : 8),
           child: Image.asset(imagePath, fit: BoxFit.cover),
         ),
       ),
@@ -988,19 +990,19 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildColorBar() {
     return Container(
       height: _paletteBarHeight,
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF7B2FD9).withOpacity(0.88),
-        borderRadius: BorderRadius.circular(25),
+        color: const Color(0xFF7B2FD9).withOpacity(0.90),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: const Color(0xFFD073FF),
-          width: 3,
+          width: 2.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.14),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 7,
             offset: const Offset(0, 3),
           ),
         ],
@@ -1021,7 +1023,8 @@ class _ColoringScreenState extends State<ColoringScreen>
             return _buildBottomImageItem(
               imagePath: g,
               selected: selectedGlitter == g,
-              circular: false,
+              circular: true,
+              size: 38,
               onTap: () async {
                 selectedGlitter = g;
                 await _loadGlitterImage();
@@ -1036,7 +1039,8 @@ class _ColoringScreenState extends State<ColoringScreen>
             return _buildBottomImageItem(
               imagePath: p,
               selected: selectedPattern == p,
-              circular: false,
+              circular: true,
+              size: 38,
               onTap: () async {
                 selectedPattern = p;
                 await _loadPatternImage();
@@ -1051,7 +1055,8 @@ class _ColoringScreenState extends State<ColoringScreen>
             return _buildBottomImageItem(
               imagePath: s,
               selected: selectedSticker == s,
-              circular: true,
+              circular: false,
+              size: 52,
               onTap: () {
                 setState(() => selectedSticker = s);
               },
@@ -1067,15 +1072,15 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildToolsBar() {
     return Container(
       height: _toolsBarHeight,
-      margin: const EdgeInsets.fromLTRB(6, 0, 6, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      margin: const EdgeInsets.fromLTRB(6, 18, 6, 4),
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFFB15DFF), Color(0xFF8E39F2)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFF7B2FD9), width: 3),
         boxShadow: const [
           BoxShadow(
@@ -1085,17 +1090,21 @@ class _ColoringScreenState extends State<ColoringScreen>
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _tool('assets/images/tools/brush.png', PaintMode.brush),
-            _tool('assets/images/tools/fill.png', PaintMode.fill),
-            _tool('assets/images/tools/glitter.png', PaintMode.glitterFill),
-            _tool('assets/images/tools/pattern.png', PaintMode.patternFill),
-            _tool('assets/images/tools/sticker.png', PaintMode.sticker),
-            _saveButton(),
-          ],
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _tool('assets/images/tools/brush.png', PaintMode.brush),
+              _tool('assets/images/tools/fill.png', PaintMode.fill),
+              _tool('assets/images/tools/glitter.png', PaintMode.glitterFill),
+              _tool('assets/images/tools/pattern.png', PaintMode.patternFill),
+              _tool('assets/images/tools/sticker.png', PaintMode.sticker),
+              _saveButton(),
+            ],
+          ),
         ),
       ),
     );
@@ -1105,17 +1114,22 @@ class _ColoringScreenState extends State<ColoringScreen>
     return Container(
       height: _bannerReservedHeight,
       width: double.infinity,
-      alignment: Alignment.center,
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 2),
+      alignment: Alignment.bottomCenter,
+      color: const Color(0xFFB55BFF),
       child: (_isBannerReady && _bannerAd != null)
-          ? SizedBox(
-              width: MediaQuery.of(context).size.width,
-              height: _bannerAd!.size.height.toDouble(),
-              child: FittedBox(
-                fit: BoxFit.fill,
-                child: SizedBox(
-                  width: _bannerAd!.size.width.toDouble(),
-                  height: _bannerAd!.size.height.toDouble(),
-                  child: AdWidget(ad: _bannerAd!),
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: MediaQuery.of(context).size.width - 16,
+                height: _bannerReservedHeight - 14,
+                child: FittedBox(
+                  fit: BoxFit.fill,
+                  child: SizedBox(
+                    width: _bannerAd!.size.width.toDouble(),
+                    height: _bannerAd!.size.height.toDouble(),
+                    child: AdWidget(ad: _bannerAd!),
+                  ),
                 ),
               ),
             )
@@ -1126,122 +1140,171 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildCanvas() {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
         child: LayoutBuilder(
-          builder: (context, outerConstraints) {
-            final double buttonsAreaHeight = 70;
-            final double gapBetweenButtonsAndFrame = 2;
+          builder: (context, constraints) {
+            final double availableWidth = constraints.maxWidth;
             final double availableHeight =
-                outerConstraints.maxHeight -
-                    buttonsAreaHeight -
-                    gapBetweenButtonsAndFrame;
+                constraints.maxHeight - _topCanvasSpacing;
 
-            if (_loading || _outlineImage == null) {
-              return Column(
-                children: [
-                  SizedBox(
-                    height: buttonsAreaHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildTopRoundButton(
-                            icon: Icons.arrow_back_rounded,
-                            onTap: () async {
-                              await _saveAfterFrame();
-                              if (!mounted) return;
-                              Navigator.pop(context);
-                            },
-                            colors: const [
-                              Color(0xFFFFB347),
-                              ui.Color(0xFFFF4C1D),
-                            ],
-                          ),
-                          _buildTopRoundButton(
-                            icon: Icons.delete_rounded,
-                            onTap: clearCanvas,
-                            colors: const [
-                              Color(0xFFFF8A36),
-                              Color(0xFFFF4C1D),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE7E7E7),
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                          color: const Color(0xFF59C93B),
-                          width: 6,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 12,
-                            offset: Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: const Center(child: CircularProgressIndicator()),
-                    ),
-                  ),
-                ],
-              );
+            double frameWidth = availableWidth * 0.992;
+            double frameHeight = frameWidth / _canvasAspectRatio;
+
+            if (frameHeight > availableHeight) {
+              frameHeight = availableHeight;
+              frameWidth = frameHeight * _canvasAspectRatio;
             }
 
-            final imageAspectRatio =
-                _outlineImage!.width / _outlineImage!.height;
+            Widget frameChild;
 
-            double frameWidth = outerConstraints.maxWidth;
-            double frameHeight = availableHeight;
+            if (_loading || _outlineImage == null) {
+              frameChild = const Center(
+                child: CircularProgressIndicator(),
+              );
+            } else {
+              frameChild = ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: Container(
+                  color: const Color(0xFFE7E7E7),
+                  padding: const EdgeInsets.all(6),
+                  child: AspectRatio(
+                    aspectRatio: _canvasAspectRatio,
+                    child: InteractiveViewer(
+                      minScale: 1,
+                      maxScale: 4,
+                      child: LayoutBuilder(
+                        builder: (context, innerConstraints) {
+                          final canvasSize = Size(
+                            innerConstraints.maxWidth,
+                            innerConstraints.maxHeight,
+                          );
 
-            final maxFrameHeight = availableHeight;
+                          _lastCanvasSize = canvasSize;
+                          _restoreSavedDataIfNeeded(canvasSize);
 
-            if (frameHeight > maxFrameHeight) {
-              frameHeight = maxFrameHeight;
-              frameWidth = frameHeight * imageAspectRatio;
+                          final isTapMode =
+                              currentMode == PaintMode.fill ||
+                              currentMode == PaintMode.glitterFill ||
+                              currentMode == PaintMode.patternFill ||
+                              currentMode == PaintMode.sticker;
+
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapDown: isTapMode
+                                ? (d) => _handleCanvasTap(d, canvasSize)
+                                : null,
+                            onPanStart: currentMode == PaintMode.brush
+                                ? (d) {
+                                    final pos = d.localPosition;
+                                    if (_isWithinCanvas(pos, canvasSize)) {
+                                      setState(() {
+                                        points.add(
+                                          DrawPoint(
+                                            offset: pos,
+                                            color: selectedColor,
+                                            strokeWidth: strokeWidth,
+                                          ),
+                                        );
+                                      });
+                                    }
+                                  }
+                                : null,
+                            onPanUpdate: currentMode == PaintMode.brush
+                                ? (d) {
+                                    final pos = d.localPosition;
+                                    if (_isWithinCanvas(pos, canvasSize)) {
+                                      setState(() {
+                                        points.add(
+                                          DrawPoint(
+                                            offset: pos,
+                                            color: selectedColor,
+                                            strokeWidth: strokeWidth,
+                                          ),
+                                        );
+                                      });
+                                    } else if (points.isNotEmpty &&
+                                        points.last != null) {
+                                      setState(() {
+                                        points.add(null);
+                                      });
+                                    }
+                                  }
+                                : null,
+                            onPanEnd: currentMode == PaintMode.brush
+                                ? (_) {
+                                    setState(() {
+                                      points.add(null);
+                                    });
+                                  }
+                                : null,
+                            child: RepaintBoundary(
+                              key: _previewKey,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Container(color: Colors.white),
+
+                                  if (_fillLayerBytes != null)
+                                    Positioned.fill(
+                                      child: Image.memory(
+                                        _fillLayerBytes!,
+                                        fit: BoxFit.fill,
+                                      ),
+                                    ),
+
+                                  Positioned.fill(
+                                    child: Image.asset(
+                                      widget.item.imagePath,
+                                      fit: BoxFit.fill,
+                                    ),
+                                  ),
+
+                                  CustomPaint(
+                                    size: canvasSize,
+                                    painter: DrawingPainter(
+                                      points: points,
+                                    ),
+                                  ),
+
+                                  ...stickers.map(
+                                    (s) => Positioned(
+                                      left: s.offset.dx - s.size / 2,
+                                      top: s.offset.dy - s.size / 2,
+                                      child: IgnorePointer(
+                                        child: Image.asset(
+                                          s.imagePath,
+                                          width: s.size,
+                                          height: s.size,
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  IgnorePointer(
+                                    child: CustomPaint(
+                                      size: canvasSize,
+                                      painter: FillParticlesPainter(
+                                        particles: _particles,
+                                        now: DateTime.now(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              );
             }
 
             return Column(
               children: [
-                SizedBox(
-                  height: buttonsAreaHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildTopRoundButton(
-                          icon: Icons.arrow_back_rounded,
-                          onTap: () async {
-                            await _saveAfterFrame();
-                            if (!mounted) return;
-                            Navigator.pop(context);
-                          },
-                          colors: const [
-                            Color(0xFFA855F7),
-                            Color(0xFF7E22CE),
-                          ],
-                        ),
-                        _buildTopRoundButton(
-                          icon: Icons.delete_rounded,
-                          onTap: clearCanvas,
-                          colors: const [
-                            Color(0xFFFF8A36),
-                            Color(0xFFFF4C1D),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(height: gapBetweenButtonsAndFrame),
+                const SizedBox(height: _topCanvasSpacing),
                 Expanded(
                   child: Center(
                     child: Container(
@@ -1249,7 +1312,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                       height: frameHeight,
                       decoration: BoxDecoration(
                         color: const Color(0xFFE7E7E7),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                           color: const Color(0xFF59C93B),
                           width: 8,
@@ -1262,144 +1325,41 @@ class _ColoringScreenState extends State<ColoringScreen>
                           ),
                         ],
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Container(
-                          color: const Color(0xFFE7E7E7),
-                          padding: const EdgeInsets.all(12),
-                          child: InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 4,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final canvasSize = Size(
-                                  constraints.maxWidth,
-                                  constraints.maxHeight,
-                                );
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(child: frameChild),
 
-                                _lastCanvasSize = canvasSize;
-                                _restoreSavedDataIfNeeded(canvasSize);
-
-                                final isTapMode =
-                                    currentMode == PaintMode.fill ||
-                                    currentMode == PaintMode.glitterFill ||
-                                    currentMode == PaintMode.patternFill ||
-                                    currentMode == PaintMode.sticker;
-
-                                return GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTapDown: isTapMode
-                                      ? (d) => _handleCanvasTap(d, canvasSize)
-                                      : null,
-                                  onPanStart: currentMode == PaintMode.brush
-                                      ? (d) {
-                                          final pos = d.localPosition;
-                                          if (_isWithinCanvas(pos, canvasSize)) {
-                                            setState(() {
-                                              points.add(
-                                                DrawPoint(
-                                                  offset: pos,
-                                                  color: selectedColor,
-                                                  strokeWidth: strokeWidth,
-                                                ),
-                                              );
-                                            });
-                                          }
-                                        }
-                                      : null,
-                                  onPanUpdate: currentMode == PaintMode.brush
-                                      ? (d) {
-                                          final pos = d.localPosition;
-                                          if (_isWithinCanvas(pos, canvasSize)) {
-                                            setState(() {
-                                              points.add(
-                                                DrawPoint(
-                                                  offset: pos,
-                                                  color: selectedColor,
-                                                  strokeWidth: strokeWidth,
-                                                ),
-                                              );
-                                            });
-                                          } else if (points.isNotEmpty &&
-                                              points.last != null) {
-                                            setState(() {
-                                              points.add(null);
-                                            });
-                                          }
-                                        }
-                                      : null,
-                                  onPanEnd: currentMode == PaintMode.brush
-                                      ? (_) {
-                                          setState(() {
-                                            points.add(null);
-                                          });
-                                        }
-                                      : null,
-                                  child: RepaintBoundary(
-                                    key: _previewKey,
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Container(color: Colors.white),
-
-                                        // طبقة التلوين - فقط تزيد فوق الموجود
-                                        if (_fillLayerBytes != null)
-                                          Positioned.fill(
-                                            child: Image.memory(
-                                              _fillLayerBytes!,
-                                              fit: BoxFit.fill,
-                                            ),
-                                          ),
-
-                                        // الصورة الأصلية فوق التلوين حتى تضل الخطوط السودا واضحة
-                                        Positioned.fill(
-                                          child: Image.asset(
-                                            widget.item.imagePath,
-                                            fit: BoxFit.fill,
-                                          ),
-                                        ),
-
-                                        // الفرشاة فوق الكل
-                                        CustomPaint(
-                                          size: canvasSize,
-                                          painter: DrawingPainter(
-                                            points: points,
-                                          ),
-                                        ),
-
-                                        // الستيكر فوق الكل
-                                        ...stickers.map(
-                                          (s) => Positioned(
-                                            left: s.offset.dx - s.size / 2,
-                                            top: s.offset.dy - s.size / 2,
-                                            child: IgnorePointer(
-                                              child: Image.asset(
-                                                s.imagePath,
-                                                width: s.size,
-                                                height: s.size,
-                                                fit: BoxFit.contain,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-
-                                        IgnorePointer(
-                                          child: CustomPaint(
-                                            size: canvasSize,
-                                            painter: FillParticlesPainter(
-                                              particles: _particles,
-                                              now: DateTime.now(),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
+                          Positioned(
+                            top: -8,
+                            left: -6,
+                            child: _buildTopRoundButton(
+                              icon: Icons.arrow_back_rounded,
+                              onTap: () async {
+                                await _saveAfterFrame();
+                                if (!mounted) return;
+                                Navigator.pop(context);
                               },
+                              colors: const [
+                                Color(0xFFA855F7),
+                                Color(0xFF7E22CE),
+                              ],
                             ),
                           ),
-                        ),
+
+                          Positioned(
+                            top: -8,
+                            right: -6,
+                            child: _buildTopRoundButton(
+                              icon: Icons.delete_rounded,
+                              onTap: clearCanvas,
+                              colors: const [
+                                Color(0xFFFF8A36),
+                                Color(0xFFFF4C1D),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -1431,8 +1391,20 @@ class _ColoringScreenState extends State<ColoringScreen>
                     Column(
                       children: [
                         _buildCanvas(),
-                        _buildColorBar(),
-                        _buildToolsBar(),
+
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _buildToolsBar(),
+
+                            Positioned(
+                              top: -50, // ← هذا اللي بخلي بار الألوان فوق الأدوات
+                              left: 0,
+                              right: 0,
+                              child: _buildColorBar(),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                     _buildBrushSizeOverlay(),

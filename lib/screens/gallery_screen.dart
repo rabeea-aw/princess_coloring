@@ -55,7 +55,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     _loadBannerAd();
     _loadInterstitialAd();
 
-    SoundManager.instance.playBackgroundMusic();
+    // SoundManager.instance.playBackgroundMusic();
   }
 
   @override
