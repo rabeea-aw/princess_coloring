@@ -77,6 +77,7 @@ class _ColoringScreenState extends State<ColoringScreen>
   static const double _toolsBarHeight = 96;
   static const double _bannerReservedHeight = 72;
   static const double _topCanvasSpacing = 12;
+  static const double _bottomControlsAreaHeight = 120;
 
   static const double _canvasAspectRatio = 3 / 4;
 
@@ -990,7 +991,7 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildColorBar() {
     return Container(
       height: _paletteBarHeight,
-      margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF7B2FD9).withOpacity(0.90),
@@ -1072,7 +1073,7 @@ class _ColoringScreenState extends State<ColoringScreen>
   Widget _buildToolsBar() {
     return Container(
       height: _toolsBarHeight,
-      margin: const EdgeInsets.fromLTRB(6, 18, 6, 4),
+      margin: const EdgeInsets.fromLTRB(6, 0, 6, 4),
       padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -1391,19 +1392,25 @@ class _ColoringScreenState extends State<ColoringScreen>
                     Column(
                       children: [
                         _buildCanvas(),
-
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            _buildToolsBar(),
-
-                            Positioned(
-                              top: -50, // ← هذا اللي بخلي بار الألوان فوق الأدوات
-                              left: 0,
-                              right: 0,
-                              child: _buildColorBar(),
-                            ),
-                          ],
+                        SizedBox(
+                          height: _bottomControlsAreaHeight,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: _buildToolsBar(),
+                              ),
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                top: -20,
+                                child: _buildColorBar(),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
