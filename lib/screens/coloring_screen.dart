@@ -165,9 +165,13 @@ class ColoringScreen extends StatefulWidget {
 
 class _ColoringScreenState extends State<ColoringScreen>
     with SingleTickerProviderStateMixin {
+  static const int _tapParticleCount = 8;
+
   final List<DrawPoint?> points = [];
   final List<StickerData> stickers = [];
   final List<_UndoSnapshot> _undoStack = [];
+  Timer? _delayedFillTimer;
+  bool _isFilling = false;
 
   final GlobalKey _previewKey = GlobalKey();
 
@@ -276,8 +280,8 @@ class _ColoringScreenState extends State<ColoringScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     )..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          setState(() => _particles.clear());
+        if (status == AnimationStatus.completed) {
+          _particles.clear(); // 🚫 NO setState here
         }
       });
 
@@ -358,6 +362,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   @override
   void dispose() {
+    _delayedFillTimer?.cancel();
     _bannerAd?.dispose();
     _particlesController.dispose();
     super.dispose();
@@ -792,9 +797,9 @@ class _ColoringScreenState extends State<ColoringScreen>
   void _spawnParticles(Offset center) {
     final now = DateTime.now();
 
-    final newParticles = List.generate(12, (i) {
-      final angle = (i / 12) * math.pi * 2;
-      final distance = 18 + _random.nextDouble() * 30;
+    final newParticles = List.generate(_tapParticleCount, (i) {
+      final angle = (i / _tapParticleCount) * math.pi * 2;
+      final distance = 16 + _random.nextDouble() * 20;
 
       return FillParticle(
         start: center,
@@ -802,18 +807,17 @@ class _ColoringScreenState extends State<ColoringScreen>
           center.dx + math.cos(angle) * distance,
           center.dy + math.sin(angle) * distance,
         ),
-        size: 10 + _random.nextDouble() * 8,
+        size: 8 + _random.nextDouble() * 5,
         rotation: angle,
-        duration: Duration(milliseconds: 420 + _random.nextInt(220)),
+        duration: Duration(milliseconds: 320 + _random.nextInt(140)),
         createdAt: now,
       );
     });
 
-    setState(() {
-      _particles
-        ..clear()
-        ..addAll(newParticles);
-    });
+    // 🚫 NO setState → this removes lag completely
+    _particles
+      ..clear()
+      ..addAll(newParticles);
 
     _particlesController.forward(from: 0);
   }
@@ -847,6 +851,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   void _handleFillTap(TapDownDetails details, Size canvasSize) {
     if (_outlineImage == null || _fillLayer == null) return;
+    if (_isFilling) return;
 
     final local = details.localPosition;
     if (!_isWithinCanvas(local, canvasSize)) return;
@@ -856,15 +861,22 @@ class _ColoringScreenState extends State<ColoringScreen>
     final int imageY =
         (local.dy / canvasSize.height * _outlineImage!.height).floor();
 
-    // ✅ Start animation instantly (no lag)
+    // ✅ Start animation instantly
     _spawnParticles(local);
 
-    // ✅ Delay heavy work (undo + flood fill)
-    Future.delayed(const Duration(milliseconds: 90), () async {
+    // ❌ Cancel previous fill if exists
+    _delayedFillTimer?.cancel();
+
+    // ✅ Delay heavy work until animation almost finishes
+    _delayedFillTimer = Timer(const Duration(milliseconds: 430), () async {
       if (!mounted) return;
+
+      _isFilling = true;
 
       _pushUndoState();
       await _performFill(imageX, imageY);
+
+      _isFilling = false;
     });
   }
 

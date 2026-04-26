@@ -64,6 +64,7 @@ class FillParticlesPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+
     for (final particle in particles) {
       final t = particle.progress(now);
       final opacity = (1.0 - t).clamp(0.0, 1.0);
@@ -77,7 +78,7 @@ class FillParticlesPainter extends CustomPainter {
       final dy = ui.lerpDouble(
         particle.start.dy,
         particle.end.dy - (18 * t),
-        Curves.easeOut.transform(t),
+         Curves.easeOut.transform(t),
       )!;
 
       final fillPaint = Paint()
