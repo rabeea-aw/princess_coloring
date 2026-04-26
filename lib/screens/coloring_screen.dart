@@ -49,6 +49,18 @@ class StickerData {
   });
 }
 
+class _UndoSnapshot {
+  final List<DrawPoint?> points;
+  final List<StickerData> stickers;
+  final img.Image? fillLayer;
+
+  _UndoSnapshot({
+    required this.points,
+    required this.stickers,
+    required this.fillLayer,
+  });
+}
+
 class ColoringScreen extends StatefulWidget {
   final ColoringItem item;
 
@@ -62,6 +74,8 @@ class _ColoringScreenState extends State<ColoringScreen>
     with SingleTickerProviderStateMixin {
   final List<DrawPoint?> points = [];
   final List<StickerData> stickers = [];
+  final List<_UndoSnapshot> _undoStack = [];
+
   final GlobalKey _previewKey = GlobalKey();
 
   Color selectedColor = const Color(0xFFFF5C1C);
@@ -115,17 +129,26 @@ class _ColoringScreenState extends State<ColoringScreen>
   ];
 
   final List<String> stickerOptions = [
-    'assets/images/stickers/star.png',
-    'assets/images/stickers/heart.png',
-    'assets/images/stickers/butterfly.png',
+    'assets/images/stickers/stick_1.png',
+    'assets/images/stickers/stick_2.png',
+    'assets/images/stickers/stick_3.png',
+    'assets/images/stickers/stick_4.png',
+    'assets/images/stickers/stick_5.png',
+    'assets/images/stickers/stick_6.png',
+    'assets/images/stickers/stick_7.png',
+    'assets/images/stickers/stick_8.png',
   ];
-  String selectedSticker = 'assets/images/stickers/star.png';
+  String selectedSticker = 'assets/images/stickers/stick_1.png';
 
   final List<String> patternOptions = [
     'assets/images/patterns/pattern1.png',
     'assets/images/patterns/pattern2.png',
     'assets/images/patterns/pattern3.png',
     'assets/images/patterns/pattern4.png',
+    'assets/images/patterns/pattern5.png',
+    'assets/images/patterns/pattern6.png',
+    'assets/images/patterns/pattern7.png',
+    'assets/images/patterns/pattern8.png',
   ];
   String selectedPattern = 'assets/images/patterns/pattern1.png';
 
@@ -134,6 +157,10 @@ class _ColoringScreenState extends State<ColoringScreen>
     'assets/images/glitter/glitter2.png',
     'assets/images/glitter/glitter3.png',
     'assets/images/glitter/glitter4.png',
+    'assets/images/glitter/glitter5.png',
+    'assets/images/glitter/glitter6.png',
+    'assets/images/glitter/glitter7.png',
+    'assets/images/glitter/glitter8.png',
   ];
   String selectedGlitter = 'assets/images/glitter/glitter1.png';
 
@@ -161,6 +188,54 @@ class _ColoringScreenState extends State<ColoringScreen>
 
     _loadBannerAd();
     _loadImageForFill();
+  }
+
+  void _pushUndoState() {
+    _undoStack.add(
+      _UndoSnapshot(
+        points: List<DrawPoint?>.from(points),
+        stickers: List<StickerData>.from(stickers),
+        fillLayer: _fillLayer == null ? null : img.Image.from(_fillLayer!),
+      ),
+    );
+
+    if (_undoStack.length > 30) {
+      _undoStack.removeAt(0);
+    }
+  }
+
+  void undoLastStep() {
+    if (_undoStack.isEmpty) return;
+
+    final last = _undoStack.removeLast();
+
+    setState(() {
+      points
+        ..clear()
+        ..addAll(last.points);
+
+      stickers
+        ..clear()
+        ..addAll(last.stickers);
+
+      if (last.fillLayer != null) {
+        _fillLayer = img.Image.from(last.fillLayer!);
+        _updateFillLayerBytes();
+      } else if (_outlineImage != null) {
+        _fillLayer = img.Image(
+          width: _outlineImage!.width,
+          height: _outlineImage!.height,
+          numChannels: 4,
+        );
+        img.fill(_fillLayer!, color: img.ColorRgba8(0, 0, 0, 0));
+        _updateFillLayerBytes();
+      }
+
+      _particles.clear();
+      activeColorIndex = null;
+    });
+
+    _saveAfterFrame();
   }
 
   void _loadBannerAd() {
@@ -460,29 +535,31 @@ class _ColoringScreenState extends State<ColoringScreen>
           canvasSize.height > 0) {
         final dataFile = await _getDataFile();
 
-        final pointsData = points.map((p) {
+        final pointsData = [];
+
+        for (final p in points) {
           if (p == null) {
-            return {'isBreak': true};
+            pointsData.add({'isBreak': true});
+          } else {
+            pointsData.add({
+              'nx': p.offset.dx / canvasSize.width,
+              'ny': p.offset.dy / canvasSize.height,
+              'color': p.color.value,
+              'strokeWidth': p.strokeWidth,
+            });
           }
+        }
 
-          return {
-            'nx': p.offset.dx / canvasSize.width,
-            'ny': p.offset.dy / canvasSize.height,
-            'color': p.color.value,
-            'strokeWidth': p.strokeWidth,
-          };
-        }).toList();
+        final stickersData = [];
 
-        final stickersData = stickers
-            .map(
-              (s) => {
-                'nx': s.offset.dx / canvasSize.width,
-                'ny': s.offset.dy / canvasSize.height,
-                'imagePath': s.imagePath,
-                'size': s.size,
-              },
-            )
-            .toList();
+        for (final s in stickers) {
+          stickersData.add({
+            'nx': s.offset.dx / canvasSize.width,
+            'ny': s.offset.dy / canvasSize.height,
+            'imagePath': s.imagePath,
+            'size': s.size,
+          });
+        }
 
         await dataFile.writeAsString(
           jsonEncode({
@@ -523,6 +600,8 @@ class _ColoringScreenState extends State<ColoringScreen>
   }
 
   Future<void> clearCanvas() async {
+    _pushUndoState();
+
     setState(() {
       points.clear();
       stickers.clear();
@@ -582,6 +661,8 @@ class _ColoringScreenState extends State<ColoringScreen>
   }
 
   void _addSticker(Offset localPosition) {
+    _pushUndoState();
+
     setState(() {
       stickers.add(
         StickerData(
@@ -591,6 +672,8 @@ class _ColoringScreenState extends State<ColoringScreen>
         ),
       );
     });
+
+    _saveAfterFrame();
   }
 
   void _handleFillTap(TapDownDetails details, Size canvasSize) {
@@ -604,8 +687,11 @@ class _ColoringScreenState extends State<ColoringScreen>
     final int imageY =
         (local.dy / canvasSize.height * _outlineImage!.height).floor();
 
+    _pushUndoState();
+
     _floodFill(imageX, imageY);
     _spawnParticles(local);
+    _saveAfterFrame();
   }
 
   img.ColorRgba8 _pixelColorForMode(int x, int y, Color baseColor) {
@@ -843,7 +929,11 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   Widget _buildBrushSizeDot(double sizeValue) {
     final isSelected = strokeWidth == sizeValue;
-    final double previewSize = sizeValue <= 6 ? 10 : sizeValue <= 12 ? 16 : 22;
+    final double previewSize = sizeValue <= 6
+        ? 10
+        : sizeValue <= 12
+            ? 16
+            : 22;
 
     return GestureDetector(
       onTap: () {
@@ -942,7 +1032,9 @@ class _ColoringScreenState extends State<ColoringScreen>
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: brushSizes.map(_buildBrushSizeDot).toList(),
+            children: [
+              for (final size in brushSizes) _buildBrushSizeDot(size),
+            ],
           ),
         ),
       ),
@@ -989,6 +1081,16 @@ class _ColoringScreenState extends State<ColoringScreen>
   }
 
   Widget _buildColorBar() {
+    int itemCount = colorsList.length;
+
+    if (currentMode == PaintMode.glitterFill) {
+      itemCount = glitterOptions.length;
+    } else if (currentMode == PaintMode.patternFill) {
+      itemCount = patternOptions.length;
+    } else if (currentMode == PaintMode.sticker) {
+      itemCount = stickerOptions.length;
+    }
+
     return Container(
       height: _paletteBarHeight,
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
@@ -1011,13 +1113,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        itemCount: currentMode == PaintMode.glitterFill
-            ? glitterOptions.length
-            : currentMode == PaintMode.patternFill
-                ? patternOptions.length
-                : currentMode == PaintMode.sticker
-                    ? stickerOptions.length
-                    : colorsList.length,
+        itemCount: itemCount,
         itemBuilder: (context, index) {
           if (currentMode == PaintMode.glitterFill) {
             final g = glitterOptions[index];
@@ -1071,6 +1167,14 @@ class _ColoringScreenState extends State<ColoringScreen>
   }
 
   Widget _buildToolsBar() {
+    final tools = [
+      ['assets/images/tools/brush.png', PaintMode.brush],
+      ['assets/images/tools/fill.png', PaintMode.fill],
+      ['assets/images/tools/glitter.png', PaintMode.glitterFill],
+      ['assets/images/tools/pattern.png', PaintMode.patternFill],
+      ['assets/images/tools/sticker.png', PaintMode.sticker],
+    ];
+
     return Container(
       height: _toolsBarHeight,
       margin: const EdgeInsets.fromLTRB(6, 0, 6, 4),
@@ -1098,11 +1202,8 @@ class _ColoringScreenState extends State<ColoringScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _tool('assets/images/tools/brush.png', PaintMode.brush),
-              _tool('assets/images/tools/fill.png', PaintMode.fill),
-              _tool('assets/images/tools/glitter.png', PaintMode.glitterFill),
-              _tool('assets/images/tools/pattern.png', PaintMode.patternFill),
-              _tool('assets/images/tools/sticker.png', PaintMode.sticker),
+              for (final tool in tools)
+                _tool(tool[0] as String, tool[1] as PaintMode),
               _saveButton(),
             ],
           ),
@@ -1185,9 +1286,9 @@ class _ColoringScreenState extends State<ColoringScreen>
 
                           final isTapMode =
                               currentMode == PaintMode.fill ||
-                              currentMode == PaintMode.glitterFill ||
-                              currentMode == PaintMode.patternFill ||
-                              currentMode == PaintMode.sticker;
+                                  currentMode == PaintMode.glitterFill ||
+                                  currentMode == PaintMode.patternFill ||
+                                  currentMode == PaintMode.sticker;
 
                           return GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -1198,6 +1299,8 @@ class _ColoringScreenState extends State<ColoringScreen>
                                 ? (d) {
                                     final pos = d.localPosition;
                                     if (_isWithinCanvas(pos, canvasSize)) {
+                                      _pushUndoState();
+
                                       setState(() {
                                         points.add(
                                           DrawPoint(
@@ -1236,6 +1339,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                     setState(() {
                                       points.add(null);
                                     });
+                                    _saveAfterFrame();
                                   }
                                 : null,
                             child: RepaintBoundary(
@@ -1244,7 +1348,6 @@ class _ColoringScreenState extends State<ColoringScreen>
                                 fit: StackFit.expand,
                                 children: [
                                   Container(color: Colors.white),
-
                                   if (_fillLayerBytes != null)
                                     Positioned.fill(
                                       child: Image.memory(
@@ -1252,23 +1355,20 @@ class _ColoringScreenState extends State<ColoringScreen>
                                         fit: BoxFit.fill,
                                       ),
                                     ),
-
                                   Positioned.fill(
                                     child: Image.asset(
                                       widget.item.imagePath,
                                       fit: BoxFit.fill,
                                     ),
                                   ),
-
                                   CustomPaint(
                                     size: canvasSize,
                                     painter: DrawingPainter(
                                       points: points,
                                     ),
                                   ),
-
-                                  ...stickers.map(
-                                    (s) => Positioned(
+                                  for (final s in stickers)
+                                    Positioned(
                                       left: s.offset.dx - s.size / 2,
                                       top: s.offset.dy - s.size / 2,
                                       child: IgnorePointer(
@@ -1280,8 +1380,6 @@ class _ColoringScreenState extends State<ColoringScreen>
                                         ),
                                       ),
                                     ),
-                                  ),
-
                                   IgnorePointer(
                                     child: CustomPaint(
                                       size: canvasSize,
@@ -1330,7 +1428,6 @@ class _ColoringScreenState extends State<ColoringScreen>
                         clipBehavior: Clip.none,
                         children: [
                           Positioned.fill(child: frameChild),
-
                           Positioned(
                             top: -8,
                             left: -6,
@@ -1347,16 +1444,28 @@ class _ColoringScreenState extends State<ColoringScreen>
                               ],
                             ),
                           ),
-
                           Positioned(
                             top: -8,
                             right: -6,
-                            child: _buildTopRoundButton(
-                              icon: Icons.delete_rounded,
-                              onTap: clearCanvas,
-                              colors: const [
-                                Color(0xFFFF8A36),
-                                Color(0xFFFF4C1D),
+                            child: Row(
+                              children: [
+                                _buildTopRoundButton(
+                                  icon: Icons.undo_rounded,
+                                  onTap: undoLastStep,
+                                  colors: const [
+                                    Color(0xFF4DB6FF),
+                                    Color(0xFF1976D2),
+                                  ],
+                                ),
+                                const SizedBox(width: 8),
+                                _buildTopRoundButton(
+                                  icon: Icons.delete_rounded,
+                                  onTap: clearCanvas,
+                                  colors: const [
+                                    Color(0xFFFF8A36),
+                                    Color(0xFFFF4C1D),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
@@ -1406,7 +1515,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                               Positioned(
                                 left: 0,
                                 right: 0,
-                                top: -20,
+                                top: -30,
                                 child: _buildColorBar(),
                               ),
                             ],

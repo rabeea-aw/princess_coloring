@@ -13,7 +13,7 @@ class GalleryScreen extends StatefulWidget {
   const GalleryScreen({super.key});
 
   static final List<ColoringItem> items = List.generate(
-    12,
+    18,
     (index) => ColoringItem(
       title: '${index + 1}',
       imagePath: 'assets/images/princess${index + 1}.png',
@@ -26,9 +26,7 @@ class GalleryScreen extends StatefulWidget {
 
 class _GalleryScreenState extends State<GalleryScreen> {
   static const Color primaryColor = Color(0xFFE784DE);
-  // static const Color lightBackgroundColor = Color(0xFFFDF1FC);
   static const Color softPinkColor = Color(0xFFF6C3EF);
-  static const Color iconColor = Color(0xFFC85BBC);
 
   final Map<String, File?> previewFiles = {};
   final Map<String, int> previewVersions = {};
@@ -54,8 +52,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
     _loadPreviewFiles();
     _loadBannerAd();
     _loadInterstitialAd();
-
-    // SoundManager.instance.playBackgroundMusic();
   }
 
   @override
@@ -64,18 +60,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
     _interstitialAd?.dispose();
     _pageController.dispose();
     super.dispose();
-  }
-
-  Future<void> _toggleSound() async {
-    final newValue = !_soundEnabled;
-    await SoundManager.instance.setSoundEnabled(newValue);
-
-    if (newValue) {
-      await SoundManager.instance.playBackgroundMusic();
-    }
-
-    if (!mounted) return;
-    setState(() => _soundEnabled = newValue);
   }
 
   void _loadBannerAd() {
@@ -217,6 +201,26 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  Widget _buildCardImage(ColoringItem item, File? previewFile, int version) {
+    return Positioned.fill(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+        child: previewFile != null
+            ? Image(
+                key: ValueKey('${previewFile.path}_$version'),
+                image: FileImage(previewFile),
+                fit: BoxFit.contain,
+                alignment: Alignment.center,
+              )
+            : Image.asset(
+                item.imagePath,
+                fit: BoxFit.contain,
+                alignment: Alignment.center,
+              ),
+      ),
+    );
+  }
+
   Widget _buildGalleryCard(
     ColoringItem item,
     File? previewFile,
@@ -228,31 +232,30 @@ class _GalleryScreenState extends State<GalleryScreen> {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          color: Colors.white,
-          border: Border.all(
-            color: primaryColor,
-            width: 1.6,
-          ),
           boxShadow: [
             BoxShadow(
-              color: primaryColor.withOpacity(0.22),
+              color: primaryColor.withValues(alpha: 0.22),
               blurRadius: 14,
               offset: const Offset(0, 6),
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: previewFile != null
-              ? Image(
-                  key: ValueKey('${previewFile.path}_$version'),
-                  image: FileImage(previewFile),
-                  fit: BoxFit.contain,
-                )
-              : Image.asset(
-                  item.imagePath,
-                  fit: BoxFit.contain,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Container(color: Colors.white),
+              ),
+              _buildCardImage(item, previewFile, version),
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/card1.png',
+                  fit: BoxFit.fill,
                 ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -287,7 +290,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: Colors.white.withOpacity(0.96),
+      color: Colors.white.withValues(alpha: 0.96),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -303,7 +306,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
             boxShadow: [
               BoxShadow(
-                color: primaryColor.withOpacity(0.18),
+                color: primaryColor.withValues(alpha: 0.18),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -311,7 +314,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
           child: Icon(
             icon,
-            color: iconColor,
+            color: primaryColor,
             size: 22,
           ),
         ),
@@ -352,8 +355,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   ? Icons.volume_up_rounded
                   : Icons.volume_off_rounded,
               onTap: () async {
-                await SoundManager.instance.playTapSound();
-                await _toggleSound();
+                final newValue = !_soundEnabled;
+                await SoundManager.instance.setSoundEnabled(newValue);
+
+                if (newValue) {
+                  await SoundManager.instance.playBackgroundMusic();
+                }
+
+                if (!mounted) return;
+                setState(() => _soundEnabled = newValue);
               },
             ),
           ),
@@ -361,72 +371,83 @@ class _GalleryScreenState extends State<GalleryScreen> {
         title: const Text(
           'Coloring',
           style: TextStyle(
-            color: iconColor,
+            color: primaryColor,
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: pageCount,
-              onPageChanged: (index) {
-                setState(() => _currentPage = index);
-              },
-              itemBuilder: (context, pageIndex) {
-                final int start = pageIndex * itemsPerPage;
-                int end = start + itemsPerPage;
-
-                if (end > GalleryScreen.items.length) {
-                  end = GalleryScreen.items.length;
-                }
-
-                final pageItems = GalleryScreen.items.sublist(start, end);
-
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: GridView.builder(
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: pageItems.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 0.92,
-                    ),
-                    itemBuilder: (context, index) {
-                      final item = pageItems[index];
-                      final previewFile = previewFiles[item.imagePath];
-                      final version = previewVersions[item.imagePath] ?? 0;
-
-                      return _buildGalleryCard(
-                        item,
-                        previewFile,
-                        version,
-                      );
-                    },
-                  ),
-                );
-              },
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/bg_g.png',
+              fit: BoxFit.cover,
             ),
           ),
-          _buildPageIndicator(pageCount),
-          if (_isBannerLoaded && _bannerAd != null)
-            Container(
-              width: double.infinity,
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Center(
-                child: SizedBox(
-                  width: _bannerAd!.size.width.toDouble(),
-                  height: _bannerAd!.size.height.toDouble(),
-                  child: AdWidget(ad: _bannerAd!),
+          Column(
+            children: [
+              Expanded(
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: pageCount,
+                  onPageChanged: (index) {
+                    setState(() => _currentPage = index);
+                  },
+                  itemBuilder: (context, pageIndex) {
+                    final int start = pageIndex * itemsPerPage;
+                    int end = start + itemsPerPage;
+
+                    if (end > GalleryScreen.items.length) {
+                      end = GalleryScreen.items.length;
+                    }
+
+                    final pageItems = GalleryScreen.items.sublist(start, end);
+
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: GridView.builder(
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: pageItems.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 0.92,
+                        ),
+                        itemBuilder: (context, index) {
+                          final item = pageItems[index];
+                          final previewFile = previewFiles[item.imagePath];
+                          final version = previewVersions[item.imagePath] ?? 0;
+
+                          return _buildGalleryCard(
+                            item,
+                            previewFile,
+                            version,
+                          );
+                        },
+                      ),
+                    );
+                  },
                 ),
               ),
-            ),
+              _buildPageIndicator(pageCount),
+              Container(
+                height: 75,
+                width: double.infinity,
+                color: Colors.white,
+                child: _isBannerLoaded && _bannerAd != null
+                    ? Center(
+                        child: SizedBox(
+                          width: _bannerAd!.size.width.toDouble(),
+                          height: _bannerAd!.size.height.toDouble(),
+                          child: AdWidget(ad: _bannerAd!),
+                        ),
+                      )
+                    : const SizedBox(),
+              ),
+            ],
+          ),
         ],
       ),
     );
