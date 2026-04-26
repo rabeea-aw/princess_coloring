@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -274,12 +275,10 @@ class _ColoringScreenState extends State<ColoringScreen>
     _particlesController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
-    )..addListener(() {
-        final now = DateTime.now();
-        if (!mounted) return;
-        setState(() {
-          _particles.removeWhere((p) => !p.isAlive(now));
-        });
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _particles.clear());
+        }
       });
 
     _loadBannerAd();
@@ -810,7 +809,12 @@ class _ColoringScreenState extends State<ColoringScreen>
       );
     });
 
-    setState(() => _particles.addAll(newParticles));
+    setState(() {
+      _particles
+        ..clear()
+        ..addAll(newParticles);
+    });
+
     _particlesController.forward(from: 0);
   }
 
@@ -852,11 +856,21 @@ class _ColoringScreenState extends State<ColoringScreen>
     final int imageY =
         (local.dy / canvasSize.height * _outlineImage!.height).floor();
 
-    _pushUndoState();
-
-    _floodFill(imageX, imageY);
+    // ✅ Start animation instantly (no lag)
     _spawnParticles(local);
-    _saveAfterFrame();
+
+    // ✅ Delay heavy work (undo + flood fill)
+    Future.delayed(const Duration(milliseconds: 90), () async {
+      if (!mounted) return;
+
+      _pushUndoState();
+      await _performFill(imageX, imageY);
+    });
+  }
+
+  Future<void> _performFill(int imageX, int imageY) async {
+    await _floodFill(imageX, imageY);
+    await _saveAfterFrame();
   }
 
   img.ColorRgba8 _pixelColorForMode(int x, int y, Color baseColor) {
@@ -930,6 +944,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
     final queue = Queue<Offset>();
     queue.add(Offset(startX.toDouble(), startY.toDouble()));
+    var processed = 0;
 
     while (queue.isNotEmpty) {
       final cur = queue.removeFirst();
@@ -949,6 +964,11 @@ class _ColoringScreenState extends State<ColoringScreen>
       queue.add(Offset((x - 1).toDouble(), y.toDouble()));
       queue.add(Offset(x.toDouble(), (y + 1).toDouble()));
       queue.add(Offset(x.toDouble(), (y - 1).toDouble()));
+
+      processed++;
+      if (processed % 2500 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
     }
 
     setState(() {
@@ -1548,12 +1568,17 @@ class _ColoringScreenState extends State<ColoringScreen>
                                       ),
                                     ),
                                   IgnorePointer(
-                                    child: CustomPaint(
-                                      size: canvasSize,
-                                      painter: FillParticlesPainter(
-                                        particles: _particles,
-                                        now: DateTime.now(),
-                                      ),
+                                    child: AnimatedBuilder(
+                                      animation: _particlesController,
+                                      builder: (context, _) {
+                                        return CustomPaint(
+                                          size: canvasSize,
+                                          painter: FillParticlesPainter(
+                                            particles: _particles,
+                                            now: DateTime.now(),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
                                 ],
