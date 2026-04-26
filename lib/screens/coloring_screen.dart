@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/coloring_item.dart';
 import '../painters/drawing_painter.dart';
@@ -59,6 +60,97 @@ class _UndoSnapshot {
     required this.stickers,
     required this.fillLayer,
   });
+
+  Map<String, dynamic> toJson(Size canvasSize) {
+    final pointsData = <Map<String, dynamic>>[];
+    for (final p in points) {
+      if (p == null) {
+        pointsData.add({'isBreak': true});
+      } else {
+        pointsData.add({
+          'nx': p.offset.dx / canvasSize.width,
+          'ny': p.offset.dy / canvasSize.height,
+          'color': p.color.value,
+          'strokeWidth': p.strokeWidth,
+        });
+      }
+    }
+
+    final stickersData = <Map<String, dynamic>>[];
+    for (final s in stickers) {
+      stickersData.add({
+        'nx': s.offset.dx / canvasSize.width,
+        'ny': s.offset.dy / canvasSize.height,
+        'imagePath': s.imagePath,
+        'size': s.size,
+      });
+    }
+
+    return {
+      'points': pointsData,
+      'stickers': stickersData,
+      'fill': fillLayer == null
+          ? null
+          : base64Encode(Uint8List.fromList(img.encodePng(fillLayer!))),
+    };
+  }
+
+  static _UndoSnapshot fromJson(Map<String, dynamic> json, Size canvasSize) {
+    final restoredPoints = <DrawPoint?>[];
+    final pointsData = json['points'];
+
+    if (pointsData is List) {
+      for (final item in pointsData) {
+        if (item is! Map) continue;
+
+        final map = Map<String, dynamic>.from(item);
+        if (map['isBreak'] == true) {
+          restoredPoints.add(null);
+          continue;
+        }
+
+        final nx = (map['nx'] as num?)?.toDouble() ?? 0;
+        final ny = (map['ny'] as num?)?.toDouble() ?? 0;
+
+        restoredPoints.add(
+          DrawPoint(
+            offset: Offset(nx * canvasSize.width, ny * canvasSize.height),
+            color: Color((map['color'] as num?)?.toInt() ?? Colors.black.value),
+            strokeWidth: (map['strokeWidth'] as num?)?.toDouble() ?? 8,
+          ),
+        );
+      }
+    }
+
+    final restoredStickers = <StickerData>[];
+    final stickersData = json['stickers'];
+
+    if (stickersData is List) {
+      for (final item in stickersData) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+
+        final nx = (map['nx'] as num?)?.toDouble() ?? 0;
+        final ny = (map['ny'] as num?)?.toDouble() ?? 0;
+
+        restoredStickers.add(
+          StickerData(
+            offset: Offset(nx * canvasSize.width, ny * canvasSize.height),
+            imagePath: map['imagePath']?.toString() ?? '',
+            size: (map['size'] as num?)?.toDouble() ?? 72,
+          ),
+        );
+      }
+    }
+
+    img.Image? fill;
+    final fillRaw = json['fill'];
+    if (fillRaw is String && fillRaw.isNotEmpty) {
+      fill = img.decodeImage(base64Decode(fillRaw));
+    }
+
+    return _UndoSnapshot(points: restoredPoints, stickers: restoredStickers, fillLayer: fill);
+  }
 }
 
 class ColoringScreen extends StatefulWidget {
@@ -106,6 +198,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   final List<Map<String, dynamic>> _pendingPointData = [];
   final List<Map<String, dynamic>> _pendingStickerData = [];
+  final List<Map<String, dynamic>> _pendingUndoData = [];
   bool _restoredSavedData = false;
   Size? _lastCanvasSize;
 
@@ -166,6 +259,9 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   String get _saveKey =>
       widget.item.imagePath.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+  
+  String get _undoPrefsKey => 'undo_stack_$_saveKey';
+
 
   @override
   void initState() {
@@ -199,7 +295,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       ),
     );
 
-    if (_undoStack.length > 30) {
+    if (_undoStack.length > 10) {
       _undoStack.removeAt(0);
     }
   }
@@ -316,6 +412,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       await _loadPatternImage();
       await _loadGlitterImage();
       await _loadSavedDrawing();
+      await _loadUndoStackFromPrefs();
 
       if (!mounted) return;
       setState(() => _loading = false);
@@ -323,6 +420,36 @@ class _ColoringScreenState extends State<ColoringScreen>
       if (!mounted) return;
       setState(() => _loading = false);
     }
+  }
+
+  Future<void> _saveUndoStackToPrefs(Size canvasSize) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final undoData = _undoStack
+          .map((snapshot) => snapshot.toJson(canvasSize))
+          .toList();
+      await prefs.setString(_undoPrefsKey, jsonEncode(undoData));
+    } catch (_) {}
+  }
+
+  Future<void> _loadUndoStackFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_undoPrefsKey);
+      if (raw == null || raw.isEmpty) return;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+
+      _pendingUndoData.clear();
+      for (final item in decoded) {
+        if (item is Map<String, dynamic>) {
+          _pendingUndoData.add(item);
+        } else if (item is Map) {
+          _pendingUndoData.add(Map<String, dynamic>.from(item));
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadPatternImage() async {
@@ -366,6 +493,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
         _pendingPointData.clear();
         _pendingStickerData.clear();
+        _pendingUndoData.clear();
 
         if (decodedJson is Map<String, dynamic>) {
           final savedPoints = decodedJson['points'];
@@ -387,6 +515,17 @@ class _ColoringScreenState extends State<ColoringScreen>
                 _pendingStickerData.add(item);
               } else if (item is Map) {
                 _pendingStickerData.add(Map<String, dynamic>.from(item));
+              }
+            }
+          }
+
+          final undoList = decodedJson['undoStack'];
+          if (undoList is List) {
+            for (final item in undoList) {
+              if (item is Map<String, dynamic>) {
+                _pendingUndoData.add(item);
+              } else if (item is Map) {
+                _pendingUndoData.add(Map<String, dynamic>.from(item));
               }
             }
           }
@@ -438,6 +577,11 @@ class _ColoringScreenState extends State<ColoringScreen>
         );
       }
 
+      final restoredUndo = <_UndoSnapshot>[];
+      for (final undo in _pendingUndoData) {
+        restoredUndo.add(_UndoSnapshot.fromJson(undo, canvasSize));
+      }
+
       setState(() {
         points
           ..clear()
@@ -445,6 +589,9 @@ class _ColoringScreenState extends State<ColoringScreen>
         stickers
           ..clear()
           ..addAll(restoredStickers);
+        _undoStack
+          ..clear()
+          ..addAll(restoredUndo);
       });
     });
   }
@@ -517,6 +664,11 @@ class _ColoringScreenState extends State<ColoringScreen>
   Future<void> _saveDrawing() async {
     try {
       if (!_hasAnyDrawing()) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove(_undoPrefsKey);
+        } catch (_) {}
+
         await _deleteSavedDrawing();
         return;
       }
@@ -561,10 +713,16 @@ class _ColoringScreenState extends State<ColoringScreen>
           });
         }
 
+        final undoData = _undoStack
+            .map((snapshot) => snapshot.toJson(canvasSize))
+            .toList();
+        await _saveUndoStackToPrefs(canvasSize);
+
         await dataFile.writeAsString(
           jsonEncode({
             'points': pointsData,
             'stickers': stickersData,
+            'undoStack': undoData,
           }),
           flush: true,
         );
@@ -607,6 +765,8 @@ class _ColoringScreenState extends State<ColoringScreen>
       stickers.clear();
       _pendingPointData.clear();
       _pendingStickerData.clear();
+      _pendingUndoData.clear();
+      _undoStack.clear();
       _restoredSavedData = true;
       _particles.clear();
       activeColorIndex = null;
@@ -621,6 +781,11 @@ class _ColoringScreenState extends State<ColoringScreen>
         _updateFillLayerBytes();
       }
     });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_undoPrefsKey);
+    } catch (_) {}
 
     await _deleteSavedDrawing();
   }
@@ -1353,12 +1518,14 @@ class _ColoringScreenState extends State<ColoringScreen>
                                       child: Image.memory(
                                         _fillLayerBytes!,
                                         fit: BoxFit.fill,
+                                         gaplessPlayback: true,
                                       ),
                                     ),
                                   Positioned.fill(
                                     child: Image.asset(
                                       widget.item.imagePath,
                                       fit: BoxFit.fill,
+                                      gaplessPlayback: true,
                                     ),
                                   ),
                                   CustomPaint(

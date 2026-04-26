@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'gallery_screen.dart';
 import '../main.dart';
+import '../services/app_settings.dart';
+import '../services/app_texts.dart';
 
 class IntroScreen extends StatefulWidget {
   const IntroScreen({super.key});
@@ -46,6 +48,124 @@ class _IntroScreenState extends State<IntroScreen> {
     });
   }
 
+  Future<void> _openSettingsSheet() async {
+    if (isSoundOn) {
+      await SoundManager.instance.playTapSound();
+    }
+
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final texts = AppTexts.of(context);
+
+            Future<void> updateLanguage(AppLanguage language) async {
+              await AppSettings.instance.setLanguage(language);
+              setSheetState(() {});
+              if (!mounted) return;
+              setState(() {});
+            }
+
+            return Container(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFF0FB),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDB2E6),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    texts.settingsTitle,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFFB5318E),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFFFC4E9), width: 2),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          title: Text(
+                            texts.language,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          leading: const Icon(Icons.language_rounded),
+                        ),
+                        RadioListTile<AppLanguage>(
+                          value: AppLanguage.device,
+                          groupValue: AppSettings.instance.language,
+                          title: Text(texts.followDeviceLanguage),
+                          activeColor: const Color(0xFFE358B8),
+                          onChanged: (v) => v == null ? null : updateLanguage(v),
+                        ),
+                        RadioListTile<AppLanguage>(
+                          value: AppLanguage.english,
+                          groupValue: AppSettings.instance.language,
+                          title: Text(texts.english),
+                          activeColor: const Color(0xFFE358B8),
+                          onChanged: (v) => v == null ? null : updateLanguage(v),
+                        ),
+                        RadioListTile<AppLanguage>(
+                          value: AppLanguage.arabic,
+                          groupValue: AppSettings.instance.language,
+                          title: Text(texts.arabic),
+                          activeColor: const Color(0xFFE358B8),
+                          onChanged: (v) => v == null ? null : updateLanguage(v),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF5AAD),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        texts.done,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+
   Future<void> _openGallery() async {
     if (isSoundOn) {
       await SoundManager.instance.playTapSound();
@@ -64,6 +184,7 @@ class _IntroScreenState extends State<IntroScreen> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final texts = AppTexts.of(context);
 
     return Scaffold(
       body: Stack(
@@ -93,7 +214,7 @@ class _IntroScreenState extends State<IntroScreen> {
             left: 20,
             child: _circleButton(
               icon: Icons.settings,
-              onTap: () {},
+              onTap: _openSettingsSheet,
             ),
           ),
 
@@ -138,9 +259,9 @@ class _IntroScreenState extends State<IntroScreen> {
                       ),
                     ],
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      "ابدأ التلوين",
+                      texts.startColoring,
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 24,

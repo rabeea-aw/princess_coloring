@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/material.dart';
 class FillParticle {
   final Offset start;
   final Offset end;
@@ -37,6 +38,30 @@ class FillParticlesPainter extends CustomPainter {
     required this.now,
   });
 
+  static final Path _unitStarPath = _createUnitStarPath();
+
+  static Path _createUnitStarPath() {
+    const int points = 5;
+    final path = Path();
+
+    for (int i = 0; i < points * 2; i++) {
+      final isOuter = i.isEven;
+      final radius = isOuter ? 1.0 : 0.45;
+      final angle = -math.pi / 2 + (i * math.pi / points);
+      final x = math.cos(angle) * radius;
+      final y = math.sin(angle) * radius;
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    path.close();
+    return path;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     for (final particle in particles) {
@@ -55,24 +80,22 @@ class FillParticlesPainter extends CustomPainter {
         Curves.easeOut.transform(t),
       )!;
 
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: '⭐',
-          style: TextStyle(
-            fontSize: particle.size,
-            color: Colors.amber.withOpacity(opacity),
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final fillPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = Colors.amber.withOpacity(opacity);
+
+      final glowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..color = Colors.yellowAccent.withOpacity(opacity * 0.9);
 
       canvas.save();
       canvas.translate(dx, dy);
       canvas.rotate(particle.rotation * (1 - t) * 0.5);
-      textPainter.paint(
-        canvas,
-        Offset(-textPainter.width / 2, -textPainter.height / 2),
-      );
+      canvas.scale(particle.size / 2.0);
+
+      canvas.drawPath(_unitStarPath, fillPaint);
+      canvas.drawPath(_unitStarPath, glowPaint);
       canvas.restore();
     }
   }

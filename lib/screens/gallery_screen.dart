@@ -202,15 +202,24 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Widget _buildCardImage(ColoringItem item, File? previewFile, int version) {
+    final showPreview = previewFile != null && previewFile.existsSync();
+
     return Positioned.fill(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-        child: previewFile != null
-            ? Image(
+        child: showPreview
+            ? Image.file(
+                previewFile,
                 key: ValueKey('${previewFile.path}_$version'),
-                image: FileImage(previewFile),
                 fit: BoxFit.contain,
                 alignment: Alignment.center,
+                errorBuilder: (_, __, ___) {
+                  return Image.asset(
+                    item.imagePath,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.center,
+                  );
+                },
               )
             : Image.asset(
                 item.imagePath,
