@@ -17,7 +17,21 @@ class _IntroScreenState extends State<IntroScreen> {
   @override
   void initState() {
     super.initState();
+    SoundManager.instance.addListener(_onSoundChanged);
     _initSound();
+  }
+
+  @override
+  void dispose() {
+    SoundManager.instance.removeListener(_onSoundChanged);
+    super.dispose();
+  }
+
+  void _onSoundChanged() {
+    if (!mounted) return;
+    setState(() {
+      isSoundOn = SoundManager.instance.soundEnabled;
+    });
   }
 
   Future<void> _initSound() async {

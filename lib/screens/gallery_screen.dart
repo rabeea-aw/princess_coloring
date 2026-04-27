@@ -48,6 +48,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
     _pageController = PageController();
     _soundEnabled = SoundManager.instance.soundEnabled;
+    SoundManager.instance.addListener(_onSoundChanged);
 
     _loadPreviewFiles();
     _loadBannerAd();
@@ -56,10 +57,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   @override
   void dispose() {
+    SoundManager.instance.removeListener(_onSoundChanged);
     _bannerAd?.dispose();
     _interstitialAd?.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _onSoundChanged() {
+    if (!mounted) return;
+    setState(() => _soundEnabled = SoundManager.instance.soundEnabled);
   }
 
   void _loadBannerAd() {

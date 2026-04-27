@@ -78,7 +78,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     : const Offset(0, 0.5),
                 child: Image.asset(
                   'assets/images/logo_1.png',
-                  width: 140,
+                  width: 240,
                 ),
               ),
             ),

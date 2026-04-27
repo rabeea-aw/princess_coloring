@@ -829,7 +829,7 @@ class _ColoringScreenState extends State<ColoringScreen>
     if (currentMode == PaintMode.sticker) {
       _addSticker(local);
     } else {
-      _handleFillTap(details, canvasSize);
+      unawaited(_handleFillTap(details, canvasSize));
     }
   }
 
@@ -849,7 +849,7 @@ class _ColoringScreenState extends State<ColoringScreen>
     _saveAfterFrame();
   }
 
-  void _handleFillTap(TapDownDetails details, Size canvasSize) {
+  Future<void> _handleFillTap(TapDownDetails details, Size canvasSize) async {
     if (_outlineImage == null || _fillLayer == null) return;
     if (_isFilling) return;
 
@@ -861,23 +861,21 @@ class _ColoringScreenState extends State<ColoringScreen>
     final int imageY =
         (local.dy / canvasSize.height * _outlineImage!.height).floor();
 
-    // ✅ Start animation instantly
-    _spawnParticles(local);
-
-    // ❌ Cancel previous fill if exists
+     // Cancel any previously scheduled animation.
     _delayedFillTimer?.cancel();
 
-    // ✅ Delay heavy work until animation almost finishes
-    _delayedFillTimer = Timer(const Duration(milliseconds: 430), () async {
-      if (!mounted) return;
+    _isFilling = true;
 
-      _isFilling = true;
-
+    try {
       _pushUndoState();
       await _performFill(imageX, imageY);
 
+      if (!mounted) return;
+      _spawnParticles(local);
+    } finally {
+
       _isFilling = false;
-    });
+    }
   }
 
   Future<void> _performFill(int imageX, int imageY) async {

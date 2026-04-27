@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/splash_screen.dart';
 import 'services/app_settings.dart';
@@ -72,9 +73,11 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-class SoundManager {
+class SoundManager extends ChangeNotifier {
   SoundManager._();
   static final SoundManager instance = SoundManager._();
+
+  static const String _soundEnabledKey = 'sound_enabled';
 
   final AudioPlayer _bgPlayer = AudioPlayer();
   final AudioPlayer _effectPlayer = AudioPlayer();
@@ -84,6 +87,9 @@ class SoundManager {
   bool get soundEnabled => _soundEnabled;
 
   Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _soundEnabled = prefs.getBool(_soundEnabledKey) ?? true;
+
     await _bgPlayer.setReleaseMode(ReleaseMode.loop);
     await _effectPlayer.setReleaseMode(ReleaseMode.stop);
 
@@ -123,7 +129,12 @@ class SoundManager {
   }
 
   Future<void> setSoundEnabled(bool value) async {
+    if (_soundEnabled == value) return;
+
     _soundEnabled = value;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_soundEnabledKey, _soundEnabled);
 
     if (!_soundEnabled) {
       await _bgPlayer.stop();
@@ -132,10 +143,7 @@ class SoundManager {
       await _bgPlayer.setVolume(0.25);
       await _effectPlayer.setVolume(1.0);
     }
-  }
 
-  Future<void> dispose() async {
-    await _bgPlayer.dispose();
-    await _effectPlayer.dispose();
+    notifyListeners();
   }
 }
