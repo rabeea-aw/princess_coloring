@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
@@ -31,13 +30,7 @@ class DrawPoint {
   });
 }
 
-enum PaintMode {
-  brush,
-  fill,
-  glitterFill,
-  patternFill,
-  sticker,
-}
+enum PaintMode { brush, fill, glitterFill, patternFill, sticker }
 
 class StickerData {
   final Offset offset;
@@ -150,7 +143,11 @@ class _UndoSnapshot {
       fill = img.decodeImage(base64Decode(fillRaw));
     }
 
-    return _UndoSnapshot(points: restoredPoints, stickers: restoredStickers, fillLayer: fill);
+    return _UndoSnapshot(
+      points: restoredPoints,
+      stickers: restoredStickers,
+      fillLayer: fill,
+    );
   }
 }
 
@@ -184,7 +181,7 @@ class _ColoringScreenState extends State<ColoringScreen>
   int? activeColorIndex;
   final Map<int, GlobalKey> _colorKeys = {};
 
-  static const double _paletteBarHeight = 62;
+  static const double _paletteBarHeight = 76;
   static const double _toolsBarHeight = 96;
   static const double _bannerReservedHeight = 72;
   static const double _topCanvasSpacing = 12;
@@ -194,12 +191,19 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   img.Image? _outlineImage;
   img.Image? _fillLayer;
-  Uint8List? _fillLayerBytes;
+  ui.Image? _fillLayerUiImage;
+  int _fillLayerUiImageGeneration = 0;
+  Uint8List? _outlineBoundaryMask;
 
-  img.Image? _patternImage;
-  img.Image? _glitterImage;
+  Uint8List? _patternBytes;
+  int _patternWidth = 0;
+  int _patternHeight = 0;
+  Uint8List? _glitterBytes;
+  int _glitterWidth = 0;
+  int _glitterHeight = 0;
 
   bool _loading = true;
+  Timer? _autoSaveTimer;
 
   final List<Map<String, dynamic>> _pendingPointData = [];
   final List<Map<String, dynamic>> _pendingStickerData = [];
@@ -264,9 +268,8 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   String get _saveKey =>
       widget.item.imagePath.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-  
-  String get _undoPrefsKey => 'undo_stack_$_saveKey';
 
+  String get _undoPrefsKey => 'undo_stack_$_saveKey';
 
   @override
   void initState() {
@@ -276,14 +279,15 @@ class _ColoringScreenState extends State<ColoringScreen>
       _colorKeys[i] = GlobalKey();
     }
 
-    _particlesController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          _particles.clear(); // 🚫 NO setState here
-        }
-      });
+    _particlesController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 700),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            _particles.clear(); // 🚫 NO setState here
+          }
+        });
 
     _loadBannerAd();
     _loadImageForFill();
@@ -307,6 +311,7 @@ class _ColoringScreenState extends State<ColoringScreen>
     if (_undoStack.isEmpty) return;
 
     final last = _undoStack.removeLast();
+    var shouldRefreshFillLayer = false;
 
     setState(() {
       points
@@ -318,8 +323,8 @@ class _ColoringScreenState extends State<ColoringScreen>
         ..addAll(last.stickers);
 
       if (last.fillLayer != null) {
-        _fillLayer = img.Image.from(last.fillLayer!);
-        _updateFillLayerBytes();
+        _fillLayer = _asRgbaImage(img.Image.from(last.fillLayer!));
+        shouldRefreshFillLayer = true;
       } else if (_outlineImage != null) {
         _fillLayer = img.Image(
           width: _outlineImage!.width,
@@ -327,14 +332,17 @@ class _ColoringScreenState extends State<ColoringScreen>
           numChannels: 4,
         );
         img.fill(_fillLayer!, color: img.ColorRgba8(0, 0, 0, 0));
-        _updateFillLayerBytes();
+        shouldRefreshFillLayer = true;
       }
 
       _particles.clear();
       activeColorIndex = null;
     });
 
-    _saveAfterFrame();
+    if (shouldRefreshFillLayer) {
+      unawaited(_refreshFillLayerUiImageAndRepaint());
+    }
+    _scheduleAutoSave();
   }
 
   void _loadBannerAd() {
@@ -363,6 +371,9 @@ class _ColoringScreenState extends State<ColoringScreen>
   @override
   void dispose() {
     _delayedFillTimer?.cancel();
+    _autoSaveTimer?.cancel();
+    _fillLayerUiImageGeneration++;
+    _fillLayerUiImage?.dispose();
     _bannerAd?.dispose();
     _particlesController.dispose();
     super.dispose();
@@ -392,6 +403,73 @@ class _ColoringScreenState extends State<ColoringScreen>
     return File('${dir.path}/${_saveKey}_preview.png');
   }
 
+  img.Image _asRgbaImage(img.Image image) {
+    if (!image.hasPalette && image.numChannels == 4) {
+      return image;
+    }
+    return image.convert(numChannels: 4);
+  }
+
+  Uint8List _buildBoundaryMask(img.Image outline) {
+    final mask = Uint8List(outline.width * outline.height);
+    img.Pixel? pixel;
+    var index = 0;
+
+    for (int y = 0; y < outline.height; y++) {
+      for (int x = 0; x < outline.width; x++) {
+        pixel = outline.getPixel(x, y, pixel);
+        if (pixel.a > 0 && pixel.r < 40 && pixel.g < 40 && pixel.b < 40) {
+          mask[index] = 1;
+        }
+        index++;
+      }
+    }
+
+    return mask;
+  }
+
+  Future<bool> _refreshFillLayerUiImage() async {
+    final layer = _fillLayer;
+    if (layer == null) return false;
+
+    final generation = ++_fillLayerUiImageGeneration;
+    final bytes = Uint8List.fromList(
+      layer.getBytes(order: img.ChannelOrder.rgba),
+    );
+    final completer = Completer<ui.Image>();
+
+    ui.decodeImageFromPixels(
+      bytes,
+      layer.width,
+      layer.height,
+      ui.PixelFormat.rgba8888,
+      completer.complete,
+    );
+
+    final nextImage = await completer.future;
+    if (!mounted || generation != _fillLayerUiImageGeneration) {
+      nextImage.dispose();
+      return false;
+    }
+
+    final previousImage = _fillLayerUiImage;
+    _fillLayerUiImage = nextImage;
+
+    if (previousImage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        previousImage.dispose();
+      });
+    }
+
+    return true;
+  }
+
+  Future<void> _refreshFillLayerUiImageAndRepaint() async {
+    final updated = await _refreshFillLayerUiImage();
+    if (!mounted || !updated) return;
+    setState(() {});
+  }
+
   Future<void> _loadImageForFill() async {
     try {
       final data = await rootBundle.load(widget.item.imagePath);
@@ -405,6 +483,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       }
 
       _outlineImage = decoded;
+      _outlineBoundaryMask = _buildBoundaryMask(decoded);
       _fillLayer = img.Image(
         width: decoded.width,
         height: decoded.height,
@@ -412,7 +491,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       );
       img.fill(_fillLayer!, color: img.ColorRgba8(0, 0, 0, 0));
 
-      _updateFillLayerBytes();
+      await _refreshFillLayerUiImage();
       await _loadPatternImage();
       await _loadGlitterImage();
       await _loadSavedDrawing();
@@ -459,18 +538,28 @@ class _ColoringScreenState extends State<ColoringScreen>
   Future<void> _loadPatternImage() async {
     try {
       final data = await rootBundle.load(selectedPattern);
-      _patternImage = img.decodeImage(data.buffer.asUint8List());
+      final decoded = img.decodeImage(data.buffer.asUint8List());
+      _patternBytes = decoded?.getBytes(order: img.ChannelOrder.rgba);
+      _patternWidth = decoded?.width ?? 0;
+      _patternHeight = decoded?.height ?? 0;
     } catch (_) {
-      _patternImage = null;
+      _patternBytes = null;
+      _patternWidth = 0;
+      _patternHeight = 0;
     }
   }
 
   Future<void> _loadGlitterImage() async {
     try {
       final data = await rootBundle.load(selectedGlitter);
-      _glitterImage = img.decodeImage(data.buffer.asUint8List());
+      final decoded = img.decodeImage(data.buffer.asUint8List());
+      _glitterBytes = decoded?.getBytes(order: img.ChannelOrder.rgba);
+      _glitterWidth = decoded?.width ?? 0;
+      _glitterHeight = decoded?.height ?? 0;
     } catch (_) {
-      _glitterImage = null;
+      _glitterBytes = null;
+      _glitterWidth = 0;
+      _glitterHeight = 0;
     }
   }
 
@@ -485,8 +574,8 @@ class _ColoringScreenState extends State<ColoringScreen>
             _outlineImage != null &&
             savedFill.width == _outlineImage!.width &&
             savedFill.height == _outlineImage!.height) {
-          _fillLayer = savedFill;
-          _updateFillLayerBytes();
+          _fillLayer = _asRgbaImage(savedFill);
+          await _refreshFillLayerUiImage();
         }
       }
 
@@ -600,11 +689,6 @@ class _ColoringScreenState extends State<ColoringScreen>
     });
   }
 
-  void _updateFillLayerBytes() {
-    if (_fillLayer == null) return;
-    _fillLayerBytes = Uint8List.fromList(img.encodePng(_fillLayer!));
-  }
-
   bool _isWithinCanvas(Offset pos, Size size) {
     return pos.dx >= 0 &&
         pos.dy >= 0 &&
@@ -612,8 +696,8 @@ class _ColoringScreenState extends State<ColoringScreen>
         pos.dy <= size.height;
   }
 
-  bool _isBlackBoundary(img.Pixel pixel) {
-    return pixel.a > 0 && pixel.r < 40 && pixel.g < 40 && pixel.b < 40;
+  int _colorByte(double component) {
+    return (component * 255).round().clamp(0, 255).toInt();
   }
 
   bool _hasBrushDrawing() => points.any((p) => p != null);
@@ -621,13 +705,13 @@ class _ColoringScreenState extends State<ColoringScreen>
   bool _hasStickerDrawing() => stickers.isNotEmpty;
 
   bool _hasFillDrawing() {
-    if (_fillLayer == null) return false;
+    final fillLayer = _fillLayer;
+    if (fillLayer == null) return false;
 
-    for (int y = 0; y < _fillLayer!.height; y++) {
-      for (int x = 0; x < _fillLayer!.width; x++) {
-        if (_fillLayer!.getPixel(x, y).a > 0) {
-          return true;
-        }
+    final bytes = fillLayer.getBytes(order: img.ChannelOrder.rgba);
+    for (int i = 3; i < bytes.length; i += 4) {
+      if (bytes[i] > 0) {
+        return true;
       }
     }
     return false;
@@ -652,6 +736,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
       final image = await boundary.toImage(pixelRatio: 2);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
 
       if (byteData == null) return;
 
@@ -686,9 +771,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       }
 
       final canvasSize = _lastCanvasSize;
-      if (canvasSize != null &&
-          canvasSize.width > 0 &&
-          canvasSize.height > 0) {
+      if (canvasSize != null && canvasSize.width > 0 && canvasSize.height > 0) {
         final dataFile = await _getDataFile();
 
         final pointsData = [];
@@ -737,9 +820,20 @@ class _ColoringScreenState extends State<ColoringScreen>
   }
 
   Future<void> _saveAfterFrame() async {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+
     await Future.delayed(Duration.zero);
     await WidgetsBinding.instance.endOfFrame;
     await _saveDrawing();
+  }
+
+  void _scheduleAutoSave() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(milliseconds: 700), () {
+      _autoSaveTimer = null;
+      unawaited(_saveAfterFrame());
+    });
   }
 
   Future<void> _deleteSavedDrawing() async {
@@ -763,6 +857,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   Future<void> clearCanvas() async {
     _pushUndoState();
+    var shouldRefreshFillLayer = false;
 
     setState(() {
       points.clear();
@@ -782,9 +877,13 @@ class _ColoringScreenState extends State<ColoringScreen>
           numChannels: 4,
         );
         img.fill(_fillLayer!, color: img.ColorRgba8(0, 0, 0, 0));
-        _updateFillLayerBytes();
+        shouldRefreshFillLayer = true;
       }
     });
+
+    if (shouldRefreshFillLayer) {
+      await _refreshFillLayerUiImageAndRepaint();
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -846,7 +945,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       );
     });
 
-    _saveAfterFrame();
+    _scheduleAutoSave();
   }
 
   Future<void> _handleFillTap(TapDownDetails details, Size canvasSize) async {
@@ -856,134 +955,161 @@ class _ColoringScreenState extends State<ColoringScreen>
     final local = details.localPosition;
     if (!_isWithinCanvas(local, canvasSize)) return;
 
-    final int imageX =
-        (local.dx / canvasSize.width * _outlineImage!.width).floor();
-    final int imageY =
-        (local.dy / canvasSize.height * _outlineImage!.height).floor();
+    final int imageX = (local.dx / canvasSize.width * _outlineImage!.width)
+        .floor();
+    final int imageY = (local.dy / canvasSize.height * _outlineImage!.height)
+        .floor();
 
-     // Cancel any previously scheduled animation.
+    // Cancel any previously scheduled animation.
     _delayedFillTimer?.cancel();
 
     _isFilling = true;
 
     try {
       _pushUndoState();
-      await _performFill(imageX, imageY);
+      final didFill = await _performFill(imageX, imageY);
 
-      if (!mounted) return;
+      if (!didFill && _undoStack.isNotEmpty) {
+        _undoStack.removeLast();
+      }
+
+      if (!mounted || !didFill) return;
       _spawnParticles(local);
+      _scheduleAutoSave();
     } finally {
-
       _isFilling = false;
     }
   }
 
-  Future<void> _performFill(int imageX, int imageY) async {
-    await _floodFill(imageX, imageY);
-    await _saveAfterFrame();
+  Future<bool> _performFill(int imageX, int imageY) async {
+    return _floodFill(imageX, imageY);
   }
 
-  img.ColorRgba8 _pixelColorForMode(int x, int y, Color baseColor) {
-    switch (currentMode) {
-      case PaintMode.glitterFill:
-        if (_glitterImage != null) {
-          final p = _glitterImage!
-              .getPixel(x % _glitterImage!.width, y % _glitterImage!.height);
-          return img.ColorRgba8(
-            p.r.toInt(),
-            p.g.toInt(),
-            p.b.toInt(),
-            p.a.toInt(),
-          );
-        }
-        break;
-
-      case PaintMode.patternFill:
-        if (_patternImage != null) {
-          final p = _patternImage!
-              .getPixel(x % _patternImage!.width, y % _patternImage!.height);
-          return img.ColorRgba8(
-            p.r.toInt(),
-            p.g.toInt(),
-            p.b.toInt(),
-            p.a.toInt(),
-          );
-        }
-        break;
-
-      case PaintMode.brush:
-      case PaintMode.fill:
-      case PaintMode.sticker:
-        break;
+  Future<bool> _floodFill(int startX, int startY) async {
+    final outlineImage = _outlineImage;
+    var fillLayer = _fillLayer;
+    final boundaryMask = _outlineBoundaryMask;
+    if (outlineImage == null || fillLayer == null || boundaryMask == null) {
+      return false;
     }
 
-    return img.ColorRgba8(
-      baseColor.red,
-      baseColor.green,
-      baseColor.blue,
-      255,
-    );
-  }
-
-  Future<void> _floodFill(int startX, int startY) async {
-    if (_outlineImage == null || _fillLayer == null) return;
-
-    final width = _outlineImage!.width;
-    final height = _outlineImage!.height;
+    final width = outlineImage.width;
+    final height = outlineImage.height;
 
     if (startX < 0 || startX >= width || startY < 0 || startY >= height) {
-      return;
+      return false;
     }
 
-    if (_isBlackBoundary(_outlineImage!.getPixel(startX, startY))) return;
+    final totalPixels = width * height;
+    final startIndex = startY * width + startX;
+    if (boundaryMask[startIndex] != 0) return false;
 
-    final startFill = _fillLayer!.getPixel(startX, startY);
+    if (fillLayer.hasPalette || fillLayer.numChannels != 4) {
+      fillLayer = _asRgbaImage(fillLayer);
+      _fillLayer = fillLayer;
+    }
+
+    final fillBytes = fillLayer.getBytes(order: img.ChannelOrder.rgba);
+    final startByteIndex = startIndex * 4;
+    final selectedRed = _colorByte(selectedColor.r);
+    final selectedGreen = _colorByte(selectedColor.g);
+    final selectedBlue = _colorByte(selectedColor.b);
 
     if (currentMode == PaintMode.fill &&
-        startFill.a == 255 &&
-        startFill.r == selectedColor.red &&
-        startFill.g == selectedColor.green &&
-        startFill.b == selectedColor.blue) {
-      return;
+        fillBytes[startByteIndex + 3] == 255 &&
+        fillBytes[startByteIndex] == selectedRed &&
+        fillBytes[startByteIndex + 1] == selectedGreen &&
+        fillBytes[startByteIndex + 2] == selectedBlue) {
+      return false;
     }
 
-    final visited = List.generate(
-      height,
-      (_) => List<bool>.filled(width, false),
-    );
+    final mode = currentMode;
+    final baseRed = selectedRed;
+    final baseGreen = selectedGreen;
+    final baseBlue = selectedBlue;
+    final patternBytes = _patternBytes;
+    final patternWidth = _patternWidth;
+    final patternHeight = _patternHeight;
+    final glitterBytes = _glitterBytes;
+    final glitterWidth = _glitterWidth;
+    final glitterHeight = _glitterHeight;
 
-    final queue = Queue<Offset>();
-    queue.add(Offset(startX.toDouble(), startY.toDouble()));
+    final visited = Uint8List(totalPixels);
+    final stack = Int32List(totalPixels);
+    var stackLength = 0;
     var processed = 0;
+    var changed = false;
 
-    while (queue.isNotEmpty) {
-      final cur = queue.removeFirst();
-      final x = cur.dx.toInt();
-      final y = cur.dy.toInt();
+    void push(int index) {
+      if (visited[index] != 0 || boundaryMask[index] != 0) return;
+      visited[index] = 1;
+      stack[stackLength++] = index;
+    }
 
-      if (x < 0 || x >= width || y < 0 || y >= height) continue;
-      if (visited[y][x]) continue;
+    push(startIndex);
 
-      visited[y][x] = true;
+    while (stackLength > 0) {
+      final index = stack[--stackLength];
+      final y = index ~/ width;
+      final x = index - (y * width);
+      final byteIndex = index * 4;
 
-      if (_isBlackBoundary(_outlineImage!.getPixel(x, y))) continue;
+      var red = baseRed;
+      var green = baseGreen;
+      var blue = baseBlue;
+      var alpha = 255;
 
-      _fillLayer!.setPixel(x, y, _pixelColorForMode(x, y, selectedColor));
+      if (mode == PaintMode.patternFill &&
+          patternBytes != null &&
+          patternWidth > 0 &&
+          patternHeight > 0) {
+        final sourceIndex =
+            (((y % patternHeight) * patternWidth) + (x % patternWidth)) * 4;
+        red = patternBytes[sourceIndex];
+        green = patternBytes[sourceIndex + 1];
+        blue = patternBytes[sourceIndex + 2];
+        alpha = patternBytes[sourceIndex + 3];
+      } else if (mode == PaintMode.glitterFill &&
+          glitterBytes != null &&
+          glitterWidth > 0 &&
+          glitterHeight > 0) {
+        final sourceIndex =
+            (((y % glitterHeight) * glitterWidth) + (x % glitterWidth)) * 4;
+        red = glitterBytes[sourceIndex];
+        green = glitterBytes[sourceIndex + 1];
+        blue = glitterBytes[sourceIndex + 2];
+        alpha = glitterBytes[sourceIndex + 3];
+      }
 
-      queue.add(Offset((x + 1).toDouble(), y.toDouble()));
-      queue.add(Offset((x - 1).toDouble(), y.toDouble()));
-      queue.add(Offset(x.toDouble(), (y + 1).toDouble()));
-      queue.add(Offset(x.toDouble(), (y - 1).toDouble()));
+      if (fillBytes[byteIndex] != red ||
+          fillBytes[byteIndex + 1] != green ||
+          fillBytes[byteIndex + 2] != blue ||
+          fillBytes[byteIndex + 3] != alpha) {
+        fillBytes[byteIndex] = red;
+        fillBytes[byteIndex + 1] = green;
+        fillBytes[byteIndex + 2] = blue;
+        fillBytes[byteIndex + 3] = alpha;
+        changed = true;
+      }
+
+      if (x > 0) push(index - 1);
+      if (x < width - 1) push(index + 1);
+      if (index >= width) push(index - width);
+      if (index < totalPixels - width) push(index + width);
 
       processed++;
-      if (processed % 2500 == 0) {
+      if (processed % 12000 == 0) {
         await Future<void>.delayed(Duration.zero);
       }
     }
 
-    setState(() {
-      _updateFillLayerBytes();
-    });
+    if (!changed) return false;
+
+    await _refreshFillLayerUiImage();
+    if (!mounted) return true;
+
+    setState(() {});
+    return true;
   }
 
   Widget _buildTopRoundButton({
@@ -1005,10 +1131,7 @@ class _ColoringScreenState extends State<ColoringScreen>
             end: Alignment.bottomRight,
             colors: colors,
           ),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.95),
-            width: 4,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.95), width: 4),
           boxShadow: const [
             BoxShadow(
               color: Colors.black26,
@@ -1042,10 +1165,7 @@ class _ColoringScreenState extends State<ColoringScreen>
             child: SizedBox(
               width: imageSize,
               height: imageSize,
-              child: Image.asset(
-                imagePath,
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset(imagePath, fit: BoxFit.contain),
             ),
           ),
         ),
@@ -1087,6 +1207,7 @@ class _ColoringScreenState extends State<ColoringScreen>
     final isSelected = selectedColor == color;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         setState(() {
           selectedColor = color;
@@ -1095,28 +1216,34 @@ class _ColoringScreenState extends State<ColoringScreen>
           }
         });
       },
-      child: AnimatedContainer(
+      child: SizedBox(
         key: colorIndex != null ? _colorKeys[colorIndex] : null,
-        duration: const Duration(milliseconds: 180),
-        width: 38,
-        height: 38,
-        margin: const EdgeInsets.symmetric(horizontal: 3),
-        transform:
-            isSelected ? (Matrix4.identity()..scale(1.08)) : Matrix4.identity(),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color,
-          border: Border.all(
-            color: isSelected ? Colors.white : Colors.black26,
-            width: isSelected ? 3.2 : 1.8,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isSelected ? color.withOpacity(0.45) : Colors.black12,
-              blurRadius: isSelected ? 8 : 4,
-              offset: const Offset(0, 2),
+        width: 56,
+        height: 52,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: isSelected ? 46 : 42,
+            height: isSelected ? 46 : 42,
+            transform: isSelected
+                ? (Matrix4.identity()..scale(1.04))
+                : Matrix4.identity(),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color,
+              border: Border.all(
+                color: isSelected ? Colors.white : Colors.black26,
+                width: isSelected ? 3.5 : 1.8,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isSelected ? color.withOpacity(0.50) : Colors.black12,
+                  blurRadius: isSelected ? 10 : 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1127,8 +1254,8 @@ class _ColoringScreenState extends State<ColoringScreen>
     final double previewSize = sizeValue <= 6
         ? 10
         : sizeValue <= 12
-            ? 16
-            : 22;
+        ? 16
+        : 22;
 
     return GestureDetector(
       onTap: () {
@@ -1187,16 +1314,17 @@ class _ColoringScreenState extends State<ColoringScreen>
       return const SizedBox.shrink();
     }
 
-    final colorTopLeft =
-        renderBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final colorTopLeft = renderBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
     final colorSize = renderBox.size;
 
     const double overlayWidth = 168;
     const double overlayHeight = 56;
     const double minPadding = 8;
 
-    double left =
-        colorTopLeft.dx + (colorSize.width / 2) - (overlayWidth / 2);
+    double left = colorTopLeft.dx + (colorSize.width / 2) - (overlayWidth / 2);
 
     if (left < minPadding) left = minPadding;
     if (left + overlayWidth > overlayBox.size.width - minPadding) {
@@ -1227,9 +1355,7 @@ class _ColoringScreenState extends State<ColoringScreen>
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (final size in brushSizes) _buildBrushSizeDot(size),
-            ],
+            children: [for (final size in brushSizes) _buildBrushSizeDot(size)],
           ),
         ),
       ),
@@ -1243,33 +1369,44 @@ class _ColoringScreenState extends State<ColoringScreen>
     bool circular = true,
     double size = 44,
   }) {
+    // Bigger invisible tap area for kids: they can tap near the glitter/pattern/sticker,
+    // not exactly on the small image circle.
+    final touchSize = math.max(size + 24, 64).toDouble();
+    final visualSize = selected ? size + 6 : size;
+
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: size,
-        height: size,
-        margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: circular ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: circular ? null : BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? const Color(0xFFE86ED7) : Colors.black26,
-            width: selected ? 3 : 1.4,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: Offset(0, 2),
+      child: SizedBox(
+        width: touchSize,
+        height: touchSize,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: visualSize,
+            height: visualSize,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: circular ? BoxShape.circle : BoxShape.rectangle,
+              borderRadius: circular ? null : BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? const Color(0xFFE86ED7) : Colors.black26,
+                width: selected ? 3 : 1.4,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(circular ? 50 : 8),
-          child: Image.asset(imagePath, fit: BoxFit.cover),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(circular ? 50 : 8),
+              child: Image.asset(imagePath, fit: BoxFit.cover),
+            ),
+          ),
         ),
       ),
     );
@@ -1293,10 +1430,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       decoration: BoxDecoration(
         color: const Color(0xFF7B2FD9).withOpacity(0.90),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: const Color(0xFFD073FF),
-          width: 2.5,
-        ),
+        border: Border.all(color: const Color(0xFFD073FF), width: 2.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.12),
@@ -1316,7 +1450,7 @@ class _ColoringScreenState extends State<ColoringScreen>
               imagePath: g,
               selected: selectedGlitter == g,
               circular: true,
-              size: 38,
+              size: 44,
               onTap: () async {
                 selectedGlitter = g;
                 await _loadGlitterImage();
@@ -1332,7 +1466,7 @@ class _ColoringScreenState extends State<ColoringScreen>
               imagePath: p,
               selected: selectedPattern == p,
               circular: true,
-              size: 38,
+              size: 44,
               onTap: () async {
                 selectedPattern = p;
                 await _loadPatternImage();
@@ -1383,11 +1517,7 @@ class _ColoringScreenState extends State<ColoringScreen>
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFF7B2FD9), width: 3),
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 8,
-            offset: Offset(0, 3),
-          ),
+          BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
         ],
       ),
       child: Align(
@@ -1455,9 +1585,7 @@ class _ColoringScreenState extends State<ColoringScreen>
             Widget frameChild;
 
             if (_loading || _outlineImage == null) {
-              frameChild = const Center(
-                child: CircularProgressIndicator(),
-              );
+              frameChild = const Center(child: CircularProgressIndicator());
             } else {
               frameChild = ClipRRect(
                 borderRadius: BorderRadius.circular(22),
@@ -1481,9 +1609,9 @@ class _ColoringScreenState extends State<ColoringScreen>
 
                           final isTapMode =
                               currentMode == PaintMode.fill ||
-                                  currentMode == PaintMode.glitterFill ||
-                                  currentMode == PaintMode.patternFill ||
-                                  currentMode == PaintMode.sticker;
+                              currentMode == PaintMode.glitterFill ||
+                              currentMode == PaintMode.patternFill ||
+                              currentMode == PaintMode.sticker;
 
                           return GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -1534,7 +1662,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                     setState(() {
                                       points.add(null);
                                     });
-                                    _saveAfterFrame();
+                                    _scheduleAutoSave();
                                   }
                                 : null,
                             child: RepaintBoundary(
@@ -1543,12 +1671,12 @@ class _ColoringScreenState extends State<ColoringScreen>
                                 fit: StackFit.expand,
                                 children: [
                                   Container(color: Colors.white),
-                                  if (_fillLayerBytes != null)
+                                  if (_fillLayerUiImage != null)
                                     Positioned.fill(
-                                      child: Image.memory(
-                                        _fillLayerBytes!,
+                                      child: RawImage(
+                                        image: _fillLayerUiImage,
                                         fit: BoxFit.fill,
-                                         gaplessPlayback: true,
+                                        filterQuality: FilterQuality.none,
                                       ),
                                     ),
                                   Positioned.fill(
@@ -1560,9 +1688,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                   ),
                                   CustomPaint(
                                     size: canvasSize,
-                                    painter: DrawingPainter(
-                                      points: points,
-                                    ),
+                                    painter: DrawingPainter(points: points),
                                   ),
                                   for (final s in stickers)
                                     Positioned(
