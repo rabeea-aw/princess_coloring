@@ -33,7 +33,6 @@ class _SplashScreenState extends State<SplashScreen> {
       });
     });
 
-    // بعد 3 ثواني: انتقال
     Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -46,6 +45,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
