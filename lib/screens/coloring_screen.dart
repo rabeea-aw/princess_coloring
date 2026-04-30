@@ -779,7 +779,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
       if (boundary == null) return;
 
-      final image = await boundary.toImage(pixelRatio: 2);
+      final image = await boundary.toImage(pixelRatio: 3);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
 
@@ -1040,8 +1040,6 @@ class _ColoringScreenState extends State<ColoringScreen>
 
     final width = outlineImage.width;
     final height = outlineImage.height;
-    final outlineBytes = outlineImage.getBytes(order: img.ChannelOrder.rgba);
-
     if (startX < 0 || startX >= width || startY < 0 || startY >= height) {
       return false;
     }
@@ -1083,36 +1081,28 @@ class _ColoringScreenState extends State<ColoringScreen>
     final glitterHeight = _glitterHeight;
 
     final visited = Uint8List(totalPixels);
-    final stack = Int32List(totalPixels);
-    var stackLength = 0;
+    final queue = Int32List(totalPixels);
+    var head = 0;
+    var tail = 0;
     var processed = 0;
     var changed = false;
 
-     bool _isFillCandidate(int index) {
+    bool isFillCandidate(int index) {
       if (boundaryMask[index] != 0) return false;
       if (!fillOnlyTransparent) return true;
       return fillBytes[index * 4 + 3] == 0;
     }
 
-    bool _isHardOutlinePixel(int index) {
-      final byteIndex = index * 4;
-      final alpha = outlineBytes[byteIndex + 3];
-      if (alpha < 40) return false;
-      return outlineBytes[byteIndex] < 70 &&
-          outlineBytes[byteIndex + 1] < 70 &&
-          outlineBytes[byteIndex + 2] < 70;
-    }
-
     void push(int index) {
-      if (visited[index] != 0 || !_isFillCandidate(index)) return;
+      if (visited[index] != 0 || !isFillCandidate(index)) return;
       visited[index] = 1;
-      stack[stackLength++] = index;
+      queue[tail++] = index;
     }
 
     push(startIndex);
 
-    while (stackLength > 0) {
-      final index = stack[--stackLength];
+    while (head < tail) {
+      final index = queue[head++];
       final y = index ~/ width;
       final x = index - (y * width);
       final byteIndex = index * 4;
@@ -1167,74 +1157,14 @@ class _ColoringScreenState extends State<ColoringScreen>
       }
 
       processed++;
-      if (processed % 12000 == 0) {
+      if (processed % 30000 == 0) {
         await Future<void>.delayed(Duration.zero);
-      }
-    }
-
-    if (changed) {
-      final edgeExpanded = Uint8List(totalPixels);
-      final frontier = Int32List(totalPixels);
-      final nextFrontier = Int32List(totalPixels);
-      var frontierLength = 0;
-      
-      for (int index = 0; index < totalPixels; index++) {
-        if (visited[index] == 0) continue;
-        edgeExpanded[index] = 1;
-        frontier[frontierLength++] = index;
-      }
-
-      const expansionSteps = 0;
-      for (int step = 0; step < expansionSteps; step++) {
-        var nextLength = 0;
-        for (int i = 0; i < frontierLength; i++) {
-          final index = frontier[i];
-          final y = index ~/ width;
-          final x = index - (y * width);
-          final candidates = <int>[
-            if (x > 0) index - 1,
-            if (x < width - 1) index + 1,
-            if (index >= width) index - width,
-            if (index < totalPixels - width) index + width,
-            if (x > 0 && index >= width) index - width - 1,
-            if (x < width - 1 && index >= width) index - width + 1,
-            if (x > 0 && index < totalPixels - width) index + width - 1,
-            if (x < width - 1 && index < totalPixels - width)
-              index + width + 1,
-          ];
-
-          for (final neighbor in candidates) {
-            if (edgeExpanded[neighbor] != 0) {
-              continue;
-            }
-            if (boundaryMask[neighbor] != 0 && _isHardOutlinePixel(neighbor)) {
-              continue;
-            }
-            final neighborByteIndex = neighbor * 4;
-            if (fillBytes[neighborByteIndex + 3] != 0) continue;
-            fillBytes[neighborByteIndex] = fillBytes[index * 4];
-            fillBytes[neighborByteIndex + 1] = fillBytes[index * 4 + 1];
-            fillBytes[neighborByteIndex + 2] = fillBytes[index * 4 + 2];
-            fillBytes[neighborByteIndex + 3] = fillBytes[index * 4 + 3];
-            edgeExpanded[neighbor] = 1;
-            nextFrontier[nextLength++] = neighbor;
-          }
-        }
-
-        frontierLength = nextLength;
-        for (int i = 0; i < nextLength; i++) {
-          frontier[i] = nextFrontier[i];
-        }
-        if (frontierLength == 0) break;
       }
     }
 
     if (!changed) return false;
 
-    await _refreshFillLayerUiImage();
-    if (!mounted) return true;
-
-    setState(() {});
+    unawaited(_refreshFillLayerUiImageAndRepaint());
     return true;
   }
 
@@ -1802,7 +1732,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                       child: RawImage(
                                         image: _fillLayerUiImage,
                                         fit: BoxFit.fill,
-                                        filterQuality: FilterQuality.none,
+                                        filterQuality: FilterQuality.medium,
                                       ),
                                     ),
                                   if (_outlineUiImage != null)
@@ -1810,7 +1740,7 @@ class _ColoringScreenState extends State<ColoringScreen>
                                       child: RawImage(
                                         image: _outlineUiImage,
                                         fit: BoxFit.fill,
-                                        filterQuality: FilterQuality.none,
+                                        filterQuality: FilterQuality.medium,
                                       ),
                                     ),
                                   CustomPaint(

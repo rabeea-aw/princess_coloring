@@ -2,7 +2,7 @@ import 'dart:io';
 // import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class AdsManager {
-  static const bool isTest = false;
+  static const bool isTest = true;
 
   static const String _testBanner =
       'ca-app-pub-3940256099942544/6300978111';

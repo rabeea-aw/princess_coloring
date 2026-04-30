@@ -109,8 +109,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
   }
 
-  String _getSaveKey(String imagePath) =>
-      imagePath.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+  String _getSaveKey(String imagePath) {
+    return imagePath.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+  }
 
   Future<Directory> _getSaveDirectory() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -281,7 +282,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     if (pageCount <= 1) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 14),
+      padding: const EdgeInsets.only(top: 6, bottom: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(
@@ -305,34 +306,37 @@ class _GalleryScreenState extends State<GalleryScreen> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.96),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: primaryColor,
-              width: 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: primaryColor.withValues(alpha: 0.18),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 62,
+        height: 62,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFFFFA7D8),
+              Color(0xFFFF6DB8),
             ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
-          child: Icon(
-            icon,
-            color: primaryColor,
-            size: 22,
+          border: Border.all(
+            color: const Color(0xFFFFD9EE),
+            width: 3,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.pink.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: 30,
         ),
       ),
     );
@@ -343,55 +347,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
     const int itemsPerPage = 6;
     final int pageCount = (GalleryScreen.items.length / itemsPerPage).ceil();
 
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final double topPadding = screenHeight * 0.12;
+
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 255, 181, 249),
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 255, 181, 249),
-        elevation: 0,
-        centerTitle: true,
-        leadingWidth: 70,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12, top: 6, bottom: 6),
-          child: _buildCircleButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            onTap: () async {
-              if (_soundEnabled) {
-                await SoundManager.instance.playTapSound();
-              }
-              if (!mounted) return;
-              Navigator.pop(context);
-            },
-          ),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12, top: 6, bottom: 6),
-            child: _buildCircleButton(
-              icon: _soundEnabled
-                  ? Icons.volume_up_rounded
-                  : Icons.volume_off_rounded,
-              onTap: () async {
-                final newValue = !_soundEnabled;
-                await SoundManager.instance.setSoundEnabled(newValue);
-
-                if (newValue) {
-                  await SoundManager.instance.playBackgroundMusic();
-                }
-
-                if (!mounted) return;
-                setState(() => _soundEnabled = newValue);
-              },
-            ),
-          ),
-        ],
-        title: const Text(
-          'Coloring',
-          style: TextStyle(
-            color: primaryColor,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
       body: Stack(
         children: [
           Positioned.fill(
@@ -400,69 +360,118 @@ class _GalleryScreenState extends State<GalleryScreen> {
               fit: BoxFit.cover,
             ),
           ),
-          Column(
-            children: [
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: pageCount,
-                  onPageChanged: (index) {
-                    setState(() => _currentPage = index);
-                  },
-                  itemBuilder: (context, pageIndex) {
-                    final int start = pageIndex * itemsPerPage;
-                    int end = start + itemsPerPage;
 
-                    if (end > GalleryScreen.items.length) {
-                      end = GalleryScreen.items.length;
-                    }
+          Padding(
+            padding: EdgeInsets.only(top: topPadding),
+            child: Column(
+              children: [
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: pageCount,
+                    onPageChanged: (index) {
+                      setState(() => _currentPage = index);
+                    },
+                    itemBuilder: (context, pageIndex) {
+                      final int start = pageIndex * itemsPerPage;
+                      int end = start + itemsPerPage;
 
-                    final pageItems = GalleryScreen.items.sublist(start, end);
+                      if (end > GalleryScreen.items.length) {
+                        end = GalleryScreen.items.length;
+                      }
 
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: GridView.builder(
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: pageItems.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 0.92,
+                      final pageItems =
+                          GalleryScreen.items.sublist(start, end);
+
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: GridView.builder(
+                          padding: EdgeInsets.zero,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: pageItems.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: 0.92,
+                          ),
+                          itemBuilder: (context, index) {
+                            final item = pageItems[index];
+                            final previewFile = previewFiles[item.imagePath];
+                            final version =
+                                previewVersions[item.imagePath] ?? 0;
+
+                            return _buildGalleryCard(
+                              item,
+                              previewFile,
+                              version,
+                            );
+                          },
                         ),
-                        itemBuilder: (context, index) {
-                          final item = pageItems[index];
-                          final previewFile = previewFiles[item.imagePath];
-                          final version = previewVersions[item.imagePath] ?? 0;
-
-                          return _buildGalleryCard(
-                            item,
-                            previewFile,
-                            version,
-                          );
-                        },
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-              _buildPageIndicator(pageCount),
-              Container(
-                height: 75,
-                width: double.infinity,
-                color: Colors.white,
-                child: _isBannerLoaded && _bannerAd != null
-                    ? Center(
-                        child: SizedBox(
-                          width: _bannerAd!.size.width.toDouble(),
-                          height: _bannerAd!.size.height.toDouble(),
-                          child: AdWidget(ad: _bannerAd!),
-                        ),
-                      )
-                    : const SizedBox(),
-              ),
-            ],
+
+                _buildPageIndicator(pageCount),
+
+                Container(
+                  height: 75,
+                  width: double.infinity,
+                  color: Colors.white,
+                  child: _isBannerLoaded && _bannerAd != null
+                      ? Center(
+                          child: SizedBox(
+                            width: _bannerAd!.size.width.toDouble(),
+                            height: _bannerAd!.size.height.toDouble(),
+                            child: AdWidget(ad: _bannerAd!),
+                          ),
+                        )
+                      : const SizedBox(),
+                ),
+              ],
+            ),
+          ),
+
+          Positioned(
+            top: 48,
+            left: 20,
+            child: _buildCircleButton(
+              icon: Icons.arrow_back_ios_new_rounded,
+              onTap: () async {
+                if (_soundEnabled) {
+                  await SoundManager.instance.playTapSound();
+                }
+
+                if (!mounted) return;
+                Navigator.pop(context);
+              },
+            ),
+          ),
+
+          Positioned(
+            top: 48,
+            right: 20,
+            child: _buildCircleButton(
+              icon: _soundEnabled
+                  ? Icons.volume_up_rounded
+                  : Icons.volume_off_rounded,
+              onTap: () async {
+                final newValue = !_soundEnabled;
+
+                await SoundManager.instance.setSoundEnabled(newValue);
+
+                if (newValue) {
+                  await SoundManager.instance.playBackgroundMusic();
+                } else {
+                  await SoundManager.instance.stopBackgroundMusic();
+                }
+
+                if (!mounted) return;
+                setState(() => _soundEnabled = newValue);
+              },
+            ),
           ),
         ],
       ),

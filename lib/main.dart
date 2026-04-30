@@ -55,19 +55,31 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Princess Coloring',
+
       locale: appLocale,
+
       supportedLocales: const [
         Locale('en'),
         Locale('ar'),
       ],
+
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+
       theme: ThemeData(
         useMaterial3: true,
       ),
+
+      builder: (context, child) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: child ?? const SizedBox(),
+        );
+      },
+
       home: const SplashScreen(),
     );
   }
@@ -75,6 +87,7 @@ class _MyAppState extends State<MyApp> {
 
 class SoundManager extends ChangeNotifier {
   SoundManager._();
+
   static final SoundManager instance = SoundManager._();
 
   static const String _soundEnabledKey = 'sound_enabled';
@@ -93,10 +106,7 @@ class SoundManager extends ChangeNotifier {
     await _bgPlayer.setReleaseMode(ReleaseMode.loop);
     await _effectPlayer.setReleaseMode(ReleaseMode.stop);
 
-    // 🎵 موسيقى الخلفية أوطى
     await _bgPlayer.setVolume(0.25);
-
-    // 🔊 أصوات التأثيرات أعلى
     await _effectPlayer.setVolume(1.0);
   }
 
