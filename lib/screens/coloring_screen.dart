@@ -1641,7 +1641,13 @@ class _ColoringScreenState extends State<ColoringScreen>
             Widget frameChild;
 
             if (_loading || _outlineImage == null) {
-              frameChild = const Center(child: CircularProgressIndicator());
+              frameChild = Center(
+                child: Image.asset(
+                  'assets/gif/loading_spinner.gif',
+                  width: 96,
+                  height: 96,
+                ),
+              );
             } else {
               frameChild = ClipRRect(
                 borderRadius: BorderRadius.circular(22),

@@ -10,14 +10,14 @@ class AdsManager {
       'ca-app-pub-3940256099942544/1033173712';
 
   static const String _androidBanner =
-      'ca-app-pub-8167739436024208/8689559754';
+      'ca-app-pub-8167739436024208/6955545335';
   static const String _iosBanner =
-      'ca-app-pub-8167739436024208/7329308830';
+      'ca-app-pub-8167739436024208/7713169797';
 
   static const String _androidInterstitial =
-      'ca-app-pub-8167739436024208/7579027179';
+    'ca-app-pub-8167739436024208/7876821329';
   static const String _iosInterstitial =
-      'ca-app-pub-8167739436024208/6264473325';
+      'ca-app-pub-8167739436024208/9704908312';
 
   static String get bannerId {
     if (isTest) return _testBanner;
